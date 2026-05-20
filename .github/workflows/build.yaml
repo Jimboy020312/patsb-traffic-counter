@@ -57,6 +57,16 @@ jobs:
           restore-keys: |
             buildozer-${{ runner.os }}-
 
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+          echo -e "\n601085b94cd77f0b54ff86406957099ebe79c4d7" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
+          echo -e "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
+          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-extra-license
+
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
@@ -68,17 +78,10 @@ jobs:
           find . -name "*.apk" 2>/dev/null
           echo "=== bin/ contents ==="
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
-          echo "=== Last 100 lines of build log ==="
-          tail -100 build.log
+          echo "=== Last 50 lines of build log ==="
+          tail -50 build.log
 
-      - name: Upload full build log
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          retention-days: 7
-
-      - name: Upload APK if found
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
@@ -87,3 +90,11 @@ jobs:
             .buildozer/**/*.apk
           retention-days: 30
           if-no-files-found: warn
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
