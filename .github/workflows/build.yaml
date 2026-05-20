@@ -1,31 +1,92 @@
-[app]
+name: Build PATSB Traffic Counter APK
 
-title = PATSB Traffic Counter
-package.name = patsbtrafficcounter
-package.domain = com.patsb
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ANDROID_SDK_ROOT: $HOME/.buildozer/android/platform/android-sdk
 
-version = 1.0
+jobs:
+  build-apk:
+    runs-on: ubuntu-22.04
 
-requirements = python3,kivy
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-icon.filename = %(source.dir)s/icon.png
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-orientation = landscape
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            git zip unzip wget \
+            openjdk-17-jdk \
+            libffi-dev libssl-dev \
+            python3-pip \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            cmake libsqlite3-dev libpng-dev \
+            build-essential ccache
 
-fullscreen = 1
+      - name: Install Buildozer + deps
+        run: |
+          pip install --upgrade pip setuptools wheel
+          pip install cython==0.29.33
+          pip install buildozer==1.5.0
 
-android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+      # FIX 1: Install modern Android cmdline-tools
+      - name: Install Android cmdline-tools
+        run: |
+          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          cd $ANDROID_SDK_ROOT/cmdline-tools
 
-android.minapi = 21
-android.api = 33
+          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          unzip tools.zip
+          mv cmdline-tools latest
 
-android.archs = arm64-v8a, armeabi-v7a
+      # FIX 2: Accept licenses + install required SDK packages
+      - name: Setup Android SDK
+        run: |
+          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
 
-p4a.bootstrap = sdl2
+          yes | sdkmanager --licenses || true
 
-[buildozer]
-log_level = 2
-warn_on_root = 1
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-33" \
+            "build-tools;33.0.2"
+
+      - name: Build APK
+        run: |
+          buildozer -v android debug 2>&1 | tee build.log
+
+      - name: Find APK
+        if: always()
+        run: |
+          echo "=== APK SEARCH ==="
+          find . -name "*.apk" || true
+          echo "=== BIN FOLDER ==="
+          ls -la bin || true
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PATSB-Traffic-Counter
+          path: bin/*.apk
+          if-no-files-found: warn
