@@ -60,13 +60,23 @@ jobs:
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
-        continue-on-error: false
+
+      - name: Find APK
+        run: |
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" 2>/dev/null
+          echo "=== Contents of bin/ if exists ==="
+          ls -la bin/ 2>/dev/null || echo "No bin/ folder"
+          echo "=== Contents of .buildozer/android ==="
+          find .buildozer -name "*.apk" 2>/dev/null | head -20
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            .buildozer/**/*.apk
           retention-days: 30
 
       - name: Upload build log on failure
