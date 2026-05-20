@@ -24,5 +24,8 @@ android.api = 33
 
 android.archs = arm64-v8a, armeabi-v7a
 
-# IMPORTANT: force modern build system
-android.bootstrap = sdl2
+p4a.bootstrap = sdl2
+
+[buildozer]
+log_level = 2
+warn_on_root = 1
