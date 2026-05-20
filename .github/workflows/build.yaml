@@ -8,7 +8,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
 jobs:
   build-apk:
@@ -27,14 +26,22 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y \
-            git zip unzip wget \
+            git zip unzip \
             openjdk-17-jdk \
-            libffi-dev libssl-dev \
+            libffi-dev \
+            libssl-dev \
             python3-pip \
-            autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev \
-            cmake libsqlite3-dev libpng-dev \
-            build-essential ccache
+            autoconf \
+            libtool \
+            pkg-config \
+            zlib1g-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
+            cmake \
+            libsqlite3-dev \
+            libpng-dev \
+            build-essential \
+            ccache
 
       - name: Install Buildozer and Cython
         run: |
@@ -42,67 +49,50 @@ jobs:
           pip install cython==0.29.33
           pip install buildozer==1.5.0
 
-      - name: Cache Buildozer
+      - name: Cache Buildozer global directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
           key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
 
-      # =========================
-      # FIXED ANDROID SDK SETUP
-      # =========================
-      - name: Install Android cmdline-tools (FIXED)
+      - name: Accept Android SDK licenses
         run: |
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
-          cd $ANDROID_SDK_ROOT/cmdline-tools
+          mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+          echo -e "\n601085b94cd77f0b54ff86406957099ebe79c4d7" > ~/.buildozer/android/platform/android-sdk/licenses/android-googletv-license
+          echo -e "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbt-license
+          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-extra-license
 
-          wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
-          unzip -q tools.zip
-
-          rm -rf latest
-          mkdir latest
-          mv cmdline-tools/* latest/
-          rm -rf cmdline-tools tools.zip
-
-      - name: Install Android SDK packages
-        run: |
-          export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
-
-          yes | sdkmanager --licenses || true
-
-          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
-            "platform-tools" \
-            "platforms;android-33" \
-            "build-tools;33.0.2"
-
-      # =========================
-      # BUILD
-      # =========================
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
+        continue-on-error: true
 
-      # =========================
-      # DEBUG OUTPUT
-      # =========================
       - name: Find APK
-        if: always()
         run: |
-          echo "=== SEARCH APK ==="
-          find . -name "*.apk" 2>/dev/null || true
-          echo "=== BIN FOLDER ==="
-          ls -la bin/ || true
+          echo "=== Searching for APK ==="
+          find . -name "*.apk" 2>/dev/null
+          echo "=== bin/ contents ==="
+          ls -la bin/ 2>/dev/null || echo "No bin/ folder"
 
-      - name: Upload build log
+      - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: build-log
           path: build.log
+          retention-days: 7
 
       - name: Upload APK
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
-          path: bin/*.apk
+          path: |
+            bin/*.apk
+            .buildozer/**/*.apk
+          retention-days: 30
+          if-no-files-found: warn
