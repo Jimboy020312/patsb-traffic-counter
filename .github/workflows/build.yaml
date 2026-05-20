@@ -8,7 +8,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ANDROID_SDK_ROOT: $HOME/.buildozer/android/platform/android-sdk
+  ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
 
 jobs:
   build-apk:
@@ -21,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
 
       - name: Install system dependencies
         run: |
@@ -36,45 +36,62 @@ jobs:
             cmake libsqlite3-dev libpng-dev \
             build-essential ccache
 
-      - name: Install Buildozer + deps
+      - name: Install Buildozer and Cython
         run: |
-          pip install --upgrade pip setuptools wheel
+          pip install --upgrade pip setuptools
           pip install cython==0.29.33
           pip install buildozer==1.5.0
 
-      # FIX 1: Install modern Android cmdline-tools
-      - name: Install Android cmdline-tools
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+
+      # =========================
+      # FIXED ANDROID SDK SETUP
+      # =========================
+      - name: Install Android cmdline-tools (FIXED)
         run: |
           mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
           cd $ANDROID_SDK_ROOT/cmdline-tools
 
           wget https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
-          unzip tools.zip
-          mv cmdline-tools latest
+          unzip -q tools.zip
 
-      # FIX 2: Accept licenses + install required SDK packages
-      - name: Setup Android SDK
+          rm -rf latest
+          mkdir latest
+          mv cmdline-tools/* latest/
+          rm -rf cmdline-tools tools.zip
+
+      - name: Install Android SDK packages
         run: |
           export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH
 
           yes | sdkmanager --licenses || true
 
-          sdkmanager \
+          sdkmanager --sdk_root=$ANDROID_SDK_ROOT \
             "platform-tools" \
             "platforms;android-33" \
             "build-tools;33.0.2"
 
+      # =========================
+      # BUILD
+      # =========================
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
 
+      # =========================
+      # DEBUG OUTPUT
+      # =========================
       - name: Find APK
         if: always()
         run: |
-          echo "=== APK SEARCH ==="
-          find . -name "*.apk" || true
+          echo "=== SEARCH APK ==="
+          find . -name "*.apk" 2>/dev/null || true
           echo "=== BIN FOLDER ==="
-          ls -la bin || true
+          ls -la bin/ || true
 
       - name: Upload build log
         if: always()
@@ -84,9 +101,8 @@ jobs:
           path: build.log
 
       - name: Upload APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
           path: bin/*.apk
-          if-no-files-found: warn
