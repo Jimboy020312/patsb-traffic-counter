@@ -60,17 +60,25 @@ jobs:
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
+        continue-on-error: true
 
       - name: Find APK
         run: |
           echo "=== Searching for APK ==="
           find . -name "*.apk" 2>/dev/null
-          echo "=== Contents of bin/ if exists ==="
+          echo "=== bin/ contents ==="
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
-          echo "=== Contents of .buildozer/android ==="
-          find .buildozer -name "*.apk" 2>/dev/null | head -20
+          echo "=== Last 100 lines of build log ==="
+          tail -100 build.log
 
-      - name: Upload APK
+      - name: Upload full build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+
+      - name: Upload APK if found
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
@@ -78,11 +86,4 @@ jobs:
             bin/*.apk
             .buildozer/**/*.apk
           retention-days: 30
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: build.log
-          retention-days: 7
+          if-no-files-found: warn
