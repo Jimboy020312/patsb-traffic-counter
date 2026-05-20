@@ -1,1 +1,55 @@
+name: Build PATSB Traffic Counter APK
 
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # also allows manual trigger from GitHub Actions tab
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            libgstreamer1.0-dev gstreamer1.0-plugins-base \
+            libltdl-dev libffi-dev libssl-dev \
+            python3-pip autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            cmake libsqlite3-dev libpng-dev
+
+      - name: Install Buildozer and dependencies
+        run: |
+          pip install --upgrade pip
+          pip install buildozer cython==0.29.33
+
+      - name: Cache Buildozer global directory
+        uses: actions/cache@v3
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
+      - name: Build APK
+        run: |
+          buildozer -v android debug
+
+      - name: Upload APK as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: PATSB-Traffic-Counter
+          path: bin/*.apk
+          retention-days: 30
