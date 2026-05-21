@@ -13,23 +13,21 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
 from kivy.core.window import Window
-from kivy.graphics import Color, Rectangle
 
 Window.clearcolor = (0.10, 0.11, 0.14, 1)
 Window.size = (1280, 720)  # PC preview only
 
 SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "traffic_save.json")
 
-# (key, label, + button color)
 VEHICLES = [
-    ("CAR",  "CAR",       (0.85, 0.20, 0.20, 1)),   # red
-    ("MOTO", "MOTO",      (0.20, 0.72, 0.35, 1)),   # green
-    ("LRY",  "LORRY",     (0.20, 0.47, 0.87, 1)),   # blue
-    ("LLRY", "L.LORRY",   (0.93, 0.50, 0.15, 1)),   # orange
-    ("BUS",  "BUS",       (0.85, 0.75, 0.10, 1)),   # yellow
+    ("CAR",  "CAR",     (0.85, 0.20, 0.20, 1)),
+    ("MOTO", "MOTO",    (0.20, 0.72, 0.35, 1)),
+    ("LRY",  "LORRY",   (0.20, 0.47, 0.87, 1)),
+    ("LLRY", "L.LORRY", (0.93, 0.50, 0.15, 1)),
+    ("BUS",  "BUS",     (0.85, 0.75, 0.10, 1)),
 ]
 
-BTN_MINUS = (0.30, 0.32, 0.36, 1)  # grey
+BTN_MINUS = (0.30, 0.32, 0.36, 1)
 
 
 def flat_btn(text, bg, color=(1, 1, 1, 1), font_size=22, bold=True):
@@ -72,11 +70,11 @@ class VehicleRow(BoxLayout):
         self.j1_count.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
         # J1 minus
-        self.j1_minus = flat_btn("−", BTN_MINUS, font_size=34)
+        self.j1_minus = flat_btn("-", BTN_MINUS, font_size=34)
         self.j1_minus.size_hint = (0.14, 1)
         self.j1_minus.bind(on_release=self._j1_dec)
 
-        # Centre divider — use a Button with no text so background fills properly
+        # Centre divider
         divider = Button(
             text='',
             background_normal='',
@@ -85,7 +83,7 @@ class VehicleRow(BoxLayout):
         )
 
         # J2 minus
-        self.j2_minus = flat_btn("−", BTN_MINUS, font_size=34)
+        self.j2_minus = flat_btn("-", BTN_MINUS, font_size=34)
         self.j2_minus.size_hint = (0.14, 1)
         self.j2_minus.bind(on_release=self._j2_dec)
 
@@ -158,7 +156,7 @@ class RootLayout(BoxLayout):
             **kwargs
         )
 
-        # Header — use flat buttons for solid background fill on Android
+        # Header
         header = BoxLayout(size_hint=(1, None), height=46, spacing=2)
 
         self.j1_name = TextInput(
@@ -207,8 +205,8 @@ class RootLayout(BoxLayout):
             self.rows[key] = row
             self.add_widget(row)
 
-        # Reset bar
-        reset_btn = flat_btn("⟳   RESET ALL", (0.75, 0.20, 0.20, 1), font_size=18)
+        # Reset button — plain text, no icon
+        reset_btn = flat_btn("RESET ALL", (0.75, 0.20, 0.20, 1), font_size=18)
         reset_btn.size_hint = (1, None)
         reset_btn.height = 54
         reset_btn.bind(on_release=self._confirm_reset)
@@ -281,6 +279,7 @@ class RootLayout(BoxLayout):
 
 class TrafficCounterApp(App):
     def build(self):
+        Window.fullscreen = 'auto'
         Window.orientation = 'landscape'
         return RootLayout()
 
