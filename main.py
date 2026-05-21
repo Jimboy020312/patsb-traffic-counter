@@ -16,7 +16,8 @@ from kivy.core.window import Window
 
 Window.clearcolor = (0.10, 0.11, 0.14, 1)
 
-SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "traffic_save.json")
+SAVE_FILE = os.path.join(os.path.dirname(
+    os.path.abspath(__file__)), "traffic_save.json")
 
 VEHICLES = [
     ("CAR",   "Car",         (0.20, 0.47, 0.87, 1)),
@@ -142,8 +143,7 @@ class JunctionPanel(BoxLayout):
         # Junction name
         self.name_input = TextInput(
             text=default_name,
-            font_size=16,
-            bold=True,
+            font_size=18,
             foreground_color=(1, 1, 1, 1),
             background_color=(0.15, 0.17, 0.21, 1),
             cursor_color=(1, 1, 1, 1),
@@ -215,15 +215,19 @@ class RootLayout(BoxLayout):
             padding=[8, 0, 8, 4],
             size_hint=(1, 1),
         )
-        self.j1 = JunctionPanel("Junction 1", (0.08, 0.13, 0.22, 1), self._save)
-        self.j2 = JunctionPanel("Junction 2", (0.08, 0.18, 0.15, 1), self._save)
+        self.j1 = JunctionPanel(
+            "Junction 1", (0.08, 0.13, 0.22, 1), self._save)
+        self.j2 = JunctionPanel(
+            "Junction 2", (0.08, 0.18, 0.15, 1), self._save)
         panels.add_widget(self.j1)
         panels.add_widget(self.j2)
         self.add_widget(panels)
 
         # Reset button
-        bottom = BoxLayout(size_hint=(1, None), height=48, padding=[8, 4, 8, 6])
-        reset_btn = flat_btn("⟳  RESET ALL", (0.75, 0.20, 0.20, 1), font_size=15)
+        bottom = BoxLayout(size_hint=(1, None), height=48,
+                           padding=[8, 4, 8, 6])
+        reset_btn = flat_btn(
+            "⟳  RESET ALL", (0.75, 0.20, 0.20, 1), font_size=15)
         reset_btn.bind(on_release=self._confirm_reset)
         bottom.add_widget(reset_btn)
         self.add_widget(bottom)
@@ -233,7 +237,8 @@ class RootLayout(BoxLayout):
     def _save(self, *a):
         try:
             with open(SAVE_FILE, 'w') as f:
-                json.dump({'j1': self.j1.get_state(), 'j2': self.j2.get_state()}, f)
+                json.dump({'j1': self.j1.get_state(),
+                          'j2': self.j2.get_state()}, f)
         except Exception as e:
             print("Save error:", e)
 
