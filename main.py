@@ -6,6 +6,11 @@ Kivy app — landscape, 2 junctions, crash recovery
 import json
 import os
 
+# Fix DPI scaling BEFORE importing anything else from kivy
+from kivy.config import Config
+Config.set('graphics', 'resizable', '0')
+Config.set('graphics', 'show_cursor', '0')
+
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.button import Button
@@ -13,9 +18,12 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.popup import Popup
 from kivy.core.window import Window
+from kivy.utils import platform
 
 Window.clearcolor = (0.10, 0.11, 0.14, 1)
-Window.size = (1280, 720)  # PC preview only
+
+if platform != 'android':
+    Window.size = (1280, 720)  # PC preview only
 
 SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "traffic_save.json")
 
@@ -56,12 +64,10 @@ class VehicleRow(BoxLayout):
         self.j1_change = j1_change
         self.j2_change = j2_change
 
-        # J1 + (left edge)
         self.j1_plus = flat_btn(label, plus_color, font_size=18)
         self.j1_plus.size_hint = (0.14, 1)
         self.j1_plus.bind(on_release=self._j1_inc)
 
-        # J1 count
         self.j1_count = Label(
             text="0", font_size=34, bold=True,
             color=(1, 1, 1, 1), size_hint=(0.10, 1),
@@ -69,12 +75,10 @@ class VehicleRow(BoxLayout):
         )
         self.j1_count.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
-        # J1 minus
         self.j1_minus = flat_btn("-", BTN_MINUS, font_size=34)
         self.j1_minus.size_hint = (0.14, 1)
         self.j1_minus.bind(on_release=self._j1_dec)
 
-        # Centre divider
         divider = Button(
             text='',
             background_normal='',
@@ -82,12 +86,10 @@ class VehicleRow(BoxLayout):
             size_hint=(0.04, 1),
         )
 
-        # J2 minus
         self.j2_minus = flat_btn("-", BTN_MINUS, font_size=34)
         self.j2_minus.size_hint = (0.14, 1)
         self.j2_minus.bind(on_release=self._j2_dec)
 
-        # J2 count
         self.j2_count = Label(
             text="0", font_size=34, bold=True,
             color=(1, 1, 1, 1), size_hint=(0.10, 1),
@@ -95,7 +97,6 @@ class VehicleRow(BoxLayout):
         )
         self.j2_count.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
-        # J2 + (right edge)
         self.j2_plus = flat_btn(label, plus_color, font_size=18)
         self.j2_plus.size_hint = (0.14, 1)
         self.j2_plus.bind(on_release=self._j2_inc)
@@ -156,7 +157,6 @@ class RootLayout(BoxLayout):
             **kwargs
         )
 
-        # Header
         header = BoxLayout(size_hint=(1, None), height=46, spacing=2)
 
         self.j1_name = TextInput(
@@ -198,14 +198,12 @@ class RootLayout(BoxLayout):
         header.add_widget(self.j2_name)
         self.add_widget(header)
 
-        # Vehicle rows
         self.rows = {}
         for key, label, color in VEHICLES:
             row = VehicleRow(key, label, color, self._save, self._save)
             self.rows[key] = row
             self.add_widget(row)
 
-        # Reset button — plain text, no icon
         reset_btn = flat_btn("RESET ALL", (0.75, 0.20, 0.20, 1), font_size=18)
         reset_btn.size_hint = (1, None)
         reset_btn.height = 54
@@ -282,6 +280,12 @@ class TrafficCounterApp(App):
         Window.fullscreen = 'auto'
         Window.orientation = 'landscape'
         return RootLayout()
+
+    def on_start(self):
+        # Force window to match actual screen size on Android
+        if platform == 'android':
+            from android.runnable import run_on_ui_thread  # noqa
+            Window.update_viewport()
 
 
 if __name__ == '__main__':
