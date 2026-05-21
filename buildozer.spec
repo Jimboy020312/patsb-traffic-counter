@@ -9,7 +9,7 @@ source.include_exts = py,png,jpg,kv,atlas
 
 version = 1.0
 
-requirements = python3,kivy
+requirements = python3,kivy,android
 
 orientation = landscape
 
@@ -19,7 +19,6 @@ android.minapi = 21
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
 
-# Force true fullscreen — hides status bar and nav bar completely
 fullscreen = 1
 
 icon.filename = %(source.dir)s/icon.png
