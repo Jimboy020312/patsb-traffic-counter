@@ -8,7 +8,6 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
 
 jobs:
   build-apk:
@@ -34,20 +33,11 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y \
             git zip unzip \
-            libffi-dev \
-            libssl-dev \
-            python3-pip \
-            autoconf \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            cmake \
-            libsqlite3-dev \
-            libpng-dev \
-            build-essential \
-            ccache
+            libffi-dev libssl-dev python3-pip \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            cmake libsqlite3-dev libpng-dev \
+            build-essential ccache
 
       - name: Install Buildozer and Cython
         run: |
@@ -55,45 +45,54 @@ jobs:
           pip install cython==0.29.33
           pip install buildozer==1.5.0
 
-      - name: Install Android SDK command-line tools
+      - name: Set up Android SDK manually
         run: |
-          mkdir -p $ANDROID_SDK_ROOT/cmdline-tools
+          SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          mkdir -p $SDK_ROOT/cmdline-tools
+          mkdir -p $SDK_ROOT/tools/bin
+
+          # Download new cmdline-tools
           cd /tmp
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
-          mv cmdline-tools $ANDROID_SDK_ROOT/cmdline-tools/latest
-          echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "$ANDROID_SDK_ROOT/platform-tools" >> $GITHUB_PATH
+          mv cmdline-tools $SDK_ROOT/cmdline-tools/latest
 
-      - name: Accept Android SDK licenses
-        run: |
-          mkdir -p $ANDROID_SDK_ROOT/licenses
-          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> $ANDROID_SDK_ROOT/licenses/android-sdk-license
-          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $ANDROID_SDK_ROOT/licenses/android-sdk-preview-license
-          echo -e "\n601085b94cd77f0b54ff86406957099ebe79c4d7" > $ANDROID_SDK_ROOT/licenses/android-googletv-license
-          echo -e "\n33b6a2b64607f11b759f320ef9dff4ae5c47d97a" > $ANDROID_SDK_ROOT/licenses/android-sdk-arm-dbt-license
-          echo -e "\ne9acab5b5fbb560a72cfaecce8946896ff6aab9d" > $ANDROID_SDK_ROOT/licenses/android-sdk-extra-license
-          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_SDK_ROOT --licenses || true
+          # Accept licenses
+          mkdir -p $SDK_ROOT/licenses
+          echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK_ROOT/licenses/android-sdk-license
+          echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> $SDK_ROOT/licenses/android-sdk-license
+          echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK_ROOT/licenses/android-sdk-preview-license
+          yes | $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_ROOT --licenses || true
 
-      - name: Install Android SDK packages
-        run: |
-          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
-            --sdk_root=$ANDROID_SDK_ROOT \
+          # Install required packages
+          $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$SDK_ROOT \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-31"
 
-      - name: Cache Buildozer global directory
+          # Create legacy sdkmanager wrapper so Buildozer 1.5.0 finds it
+          cat > $SDK_ROOT/tools/bin/sdkmanager << 'WRAPPER'
+          #!/bin/bash
+          exec $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"
+          WRAPPER
+          chmod +x $SDK_ROOT/tools/bin/sdkmanager
+
+      - name: Cache Buildozer directory
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-v5-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-${{ runner.os }}-v6-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-v5-
+            buildozer-${{ runner.os }}-v6-
 
-      - name: Verify Java version
-        run: java -version
+      - name: Verify setup
+        run: |
+          java -version
+          echo "SDK tools:"
+          ls ~/.buildozer/android/platform/android-sdk/tools/bin/
+          echo "Cmdline tools:"
+          ls ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/
 
       - name: Build APK
         run: |
@@ -102,9 +101,7 @@ jobs:
 
       - name: Find APK
         run: |
-          echo "=== Searching for APK ==="
           find . -name "*.apk" 2>/dev/null
-          echo "=== bin/ contents ==="
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
 
       - name: Upload build log (always)
