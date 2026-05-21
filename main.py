@@ -16,21 +16,20 @@ from kivy.core.window import Window
 from kivy.graphics import Color, Rectangle
 
 Window.clearcolor = (0.10, 0.11, 0.14, 1)
-Window.size = (1280, 720)  # PC preview only — ignored on Android
+Window.size = (1280, 720)  # PC preview only
 
-SAVE_FILE = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), "traffic_save.json")
+SAVE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "traffic_save.json")
 
-# (key, emoji icon, + button color)
+# (key, label, + button color)
 VEHICLES = [
-    ("CAR",  "🚗", (0.85, 0.20, 0.20, 1)),   # red
-    ("MOTO", "🏍", (0.20, 0.72, 0.35, 1)),   # green
-    ("LRY",  "🚛", (0.20, 0.47, 0.87, 1)),   # blue
-    ("LLRY", "🚚", (0.93, 0.50, 0.15, 1)),   # orange
-    ("BUS",  "🚌", (0.85, 0.75, 0.10, 1)),   # yellow
+    ("CAR",  "CAR",       (0.85, 0.20, 0.20, 1)),   # red
+    ("MOTO", "MOTO",      (0.20, 0.72, 0.35, 1)),   # green
+    ("LRY",  "LORRY",     (0.20, 0.47, 0.87, 1)),   # blue
+    ("LLRY", "L.LORRY",   (0.93, 0.50, 0.15, 1)),   # orange
+    ("BUS",  "BUS",       (0.85, 0.75, 0.10, 1)),   # yellow
 ]
 
-BTN_MINUS = (0.30, 0.32, 0.36, 1)  # grey — all minus buttons
+BTN_MINUS = (0.30, 0.32, 0.36, 1)  # grey
 
 
 def flat_btn(text, bg, color=(1, 1, 1, 1), font_size=22, bold=True):
@@ -45,17 +44,12 @@ def flat_btn(text, bg, color=(1, 1, 1, 1), font_size=22, bold=True):
 
 
 class VehicleRow(BoxLayout):
-    """
-    Full-width row for one vehicle type across both junctions:
-    [J1 +] [J1 count] [J1 -]  |gap|  [J2 -] [J2 count] [J2 +]
-    """
-
-    def __init__(self, key, icon, plus_color, j1_change, j2_change, **kwargs):
+    def __init__(self, key, label, plus_color, j1_change, j2_change, **kwargs):
         super().__init__(
             orientation='horizontal',
             size_hint=(1, 1),
-            spacing=0,
-            padding=[0, 2, 0, 2],
+            spacing=2,
+            padding=[0, 1, 0, 1],
             **kwargs
         )
         self.key = key
@@ -64,59 +58,47 @@ class VehicleRow(BoxLayout):
         self.j1_change = j1_change
         self.j2_change = j2_change
 
-        # ── Junction 1 (left side) ──────────────────────────────
-        # + far left edge
-        self.j1_plus = flat_btn(icon, plus_color, font_size=30)
+        # J1 + (left edge)
+        self.j1_plus = flat_btn(label, plus_color, font_size=18)
         self.j1_plus.size_hint = (0.14, 1)
         self.j1_plus.bind(on_release=self._j1_inc)
 
-        # count
+        # J1 count
         self.j1_count = Label(
-            text="0",
-            font_size=34,
-            bold=True,
-            color=(1, 1, 1, 1),
-            size_hint=(0.10, 1),
-            halign='center',
-            valign='middle',
+            text="0", font_size=34, bold=True,
+            color=(1, 1, 1, 1), size_hint=(0.10, 1),
+            halign='center', valign='middle',
         )
         self.j1_count.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
-        # - button
+        # J1 minus
         self.j1_minus = flat_btn("−", BTN_MINUS, font_size=34)
         self.j1_minus.size_hint = (0.14, 1)
         self.j1_minus.bind(on_release=self._j1_dec)
 
-        # ── Centre divider ──────────────────────────────────────
-        divider = Label(text="", size_hint=(0.04, 1))
-        with divider.canvas.before:
-            Color(0.18, 0.20, 0.25, 1)
-            self._div_rect = Rectangle(pos=divider.pos, size=divider.size)
-        divider.bind(
-            pos=lambda i, v: setattr(self._div_rect, 'pos', v),
-            size=lambda i, v: setattr(self._div_rect, 'size', v),
+        # Centre divider — use a Button with no text so background fills properly
+        divider = Button(
+            text='',
+            background_normal='',
+            background_color=(0.18, 0.20, 0.25, 1),
+            size_hint=(0.04, 1),
         )
 
-        # ── Junction 2 (right side, mirrored) ──────────────────
-        # - button
+        # J2 minus
         self.j2_minus = flat_btn("−", BTN_MINUS, font_size=34)
         self.j2_minus.size_hint = (0.14, 1)
         self.j2_minus.bind(on_release=self._j2_dec)
 
-        # count
+        # J2 count
         self.j2_count = Label(
-            text="0",
-            font_size=34,
-            bold=True,
-            color=(1, 1, 1, 1),
-            size_hint=(0.10, 1),
-            halign='center',
-            valign='middle',
+            text="0", font_size=34, bold=True,
+            color=(1, 1, 1, 1), size_hint=(0.10, 1),
+            halign='center', valign='middle',
         )
         self.j2_count.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
-        # + far right edge
-        self.j2_plus = flat_btn(icon, plus_color, font_size=30)
+        # J2 + (right edge)
+        self.j2_plus = flat_btn(label, plus_color, font_size=18)
         self.j2_plus.size_hint = (0.14, 1)
         self.j2_plus.bind(on_release=self._j2_inc)
 
@@ -125,7 +107,6 @@ class VehicleRow(BoxLayout):
                   self.j2_minus, self.j2_count, self.j2_plus]:
             self.add_widget(w)
 
-    # J1
     def _j1_inc(self, *a):
         self._j1 += 1
         self.j1_count.text = str(self._j1)
@@ -137,7 +118,6 @@ class VehicleRow(BoxLayout):
             self.j1_count.text = str(self._j1)
             self.j1_change()
 
-    # J2
     def _j2_inc(self, *a):
         self._j2 += 1
         self.j2_count.text = str(self._j2)
@@ -173,20 +153,13 @@ class RootLayout(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(
             orientation='vertical',
-            spacing=0,
+            spacing=2,
             padding=[0, 0, 0, 0],
             **kwargs
         )
 
-        # ── Header ─────────────────────────────────────────────
-        header = BoxLayout(size_hint=(1, None), height=46)
-        with header.canvas.before:
-            Color(0.07, 0.08, 0.11, 1)
-            self._hdr_rect = Rectangle(pos=header.pos, size=header.size)
-        header.bind(
-            pos=lambda i, v: setattr(self._hdr_rect, 'pos', v),
-            size=lambda i, v: setattr(self._hdr_rect, 'size', v),
-        )
+        # Header — use flat buttons for solid background fill on Android
+        header = BoxLayout(size_hint=(1, None), height=46, spacing=2)
 
         self.j1_name = TextInput(
             text="Junction 1",
@@ -200,16 +173,15 @@ class RootLayout(BoxLayout):
         )
         self.j1_name.bind(text=lambda *a: self._save())
 
-        title = Label(
+        title_btn = Button(
             text="PATSB Traffic Counter",
-            font_size=17,
+            font_size=16,
             bold=True,
             color=(0.70, 0.75, 0.85, 1),
-            halign='center',
-            valign='middle',
+            background_normal='',
+            background_color=(0.07, 0.08, 0.11, 1),
             size_hint=(0.30, 1),
         )
-        title.bind(size=lambda i, v: setattr(i, 'text_size', v))
 
         self.j2_name = TextInput(
             text="Junction 2",
@@ -224,25 +196,23 @@ class RootLayout(BoxLayout):
         self.j2_name.bind(text=lambda *a: self._save())
 
         header.add_widget(self.j1_name)
-        header.add_widget(title)
+        header.add_widget(title_btn)
         header.add_widget(self.j2_name)
         self.add_widget(header)
 
-        # ── Vehicle rows ────────────────────────────────────────
+        # Vehicle rows
         self.rows = {}
-        for key, icon, color in VEHICLES:
-            row = VehicleRow(key, icon, color, self._save, self._save)
+        for key, label, color in VEHICLES:
+            row = VehicleRow(key, label, color, self._save, self._save)
             self.rows[key] = row
             self.add_widget(row)
 
-        # ── Reset bar ───────────────────────────────────────────
-        bottom = BoxLayout(size_hint=(1, None), height=54,
-                           padding=[8, 4, 8, 6])
-        reset_btn = flat_btn(
-            "⟳   RESET ALL", (0.75, 0.20, 0.20, 1), font_size=18)
+        # Reset bar
+        reset_btn = flat_btn("⟳   RESET ALL", (0.75, 0.20, 0.20, 1), font_size=18)
+        reset_btn.size_hint = (1, None)
+        reset_btn.height = 54
         reset_btn.bind(on_release=self._confirm_reset)
-        bottom.add_widget(reset_btn)
-        self.add_widget(bottom)
+        self.add_widget(reset_btn)
 
         self._load()
 
@@ -277,15 +247,13 @@ class RootLayout(BoxLayout):
         content = BoxLayout(orientation='vertical', spacing=16, padding=24)
         content.add_widget(Label(
             text="Reset ALL counts for both junctions?\nThis cannot be undone.",
-            halign='center',
-            valign='middle',
-            color=(1, 1, 1, 1),
-            font_size=18,
+            halign='center', valign='middle',
+            color=(1, 1, 1, 1), font_size=18,
             size_hint=(1, 1),
         ))
         btns = BoxLayout(orientation='horizontal', spacing=12,
                          size_hint=(1, None), height=70)
-        cancel = flat_btn("Cancel",     (0.30, 0.32, 0.38, 1), font_size=18)
+        cancel  = flat_btn("Cancel",     (0.30, 0.32, 0.38, 1), font_size=18)
         confirm = flat_btn("Yes, Reset", (0.75, 0.20, 0.20, 1), font_size=18)
         btns.add_widget(cancel)
         btns.add_widget(confirm)
