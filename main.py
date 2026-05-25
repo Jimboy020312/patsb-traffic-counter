@@ -34,16 +34,10 @@ VEHICLES = {
     "BUS":  ("B",  (0.85, 0.75, 0.10, 1)),
 }
 
-# Ring 1: LRY 42°   Ring 2: CAR 62°, BUS 22°   Ring 3: MOTO 80°, LLRY 12°
-LEFT_ARC = [
-    ("LRY",  42, 0.30),
-    ("CAR",  62, 0.56),
-    ("BUS",  22, 0.56),
-    ("MOTO", 80, 0.84),
-    ("LLRY", 12, 0.84),
-]
-TOP_H    = 110
-TIMER_H  = 240
+# Button order — positions computed mathematically for equal gaps
+ARC_ORDER = ["BUS", "CAR", "LRY", "MOTO", "LLRY"]
+TOP_H    = 84
+TIMER_H  = 220
 
 
 # ── Vehicle icon drawing ────────────────────────────────────────────────────
@@ -202,7 +196,7 @@ class JunctionSummary(BoxLayout):
         for key in SUMMARY_ORDER:
             short, color = VEHICLES[key]
             btn = SummaryChip(chip_color=color, text=f"{short}: 0",
-                              font_size=22, bold=True,
+                              font_size=19, bold=True,
                               color=(1,1,1,1), size_hint=(1,1))
             btn.bind(on_release=lambda b,k=key: self._minus(k))
             self.chips[key] = (btn, short)
@@ -239,14 +233,14 @@ class RainbowCluster(FloatLayout):
         self.corner = corner
         self._btns  = []
         self.bind(size=self._place, pos=self._place)
-        for key, angle, radius in LEFT_ARC:
+        for key in ARC_ORDER:
             short, color = VEHICLES[key]
             btn = CircleButton(key=key, circle_color=color,
                                text=short, font_size=28, bold=True, color=(1,1,1,1))
             btn.size_hint = (None, None)
-            btn.size      = (10, 10)   # will be set in _place
+            btn.size      = (10, 10)
             btn.bind(on_release=lambda b, k=key: self.on_tap(k))
-            self._btns.append((key, angle, radius, btn))
+            self._btns.append((key, btn))
             self.add_widget(btn)
 
     def _place(self, *a):
@@ -254,32 +248,58 @@ class RainbowCluster(FloatLayout):
         if w <= 0 or h <= 0: return
         ref = min(w, h)
 
-        # Dynamic size: max fits within frame with spacing
-        # Minimum gap between buttons: 8px
-        btn_size = int(ref * 0.27)
-        btn_size = max(50, btn_size)
+        # Three ring radii
+        r1 = ref * 0.300
+        r2 = ref * 0.545
+        r3 = ref * 0.790
 
-        for key, deg, rfrac, btn in self._btns:
-            r   = rfrac * ref
-            rad = math.radians(deg)
-            dx  = r * math.cos(rad)
-            dy  = r * math.sin(rad)
+        # Button size and equal target gap
+        btn_size = max(50, int(ref * 0.265))
+        gap      = max(10, int(ref * 0.024))
+        D        = btn_size + gap   # same center-to-center for ALL adjacent pairs
+
+        # Law of cosines: D² = ra² + rb² - 2·ra·rb·cos(θ)
+        # → θ = arccos((ra²+rb²-D²)/(2·ra·rb))
+
+        # Angular step ring1 → ring2
+        v2 = (r1**2 + r2**2 - D**2) / (2 * r1 * r2)
+        t2 = math.acos(max(-1.0, min(1.0, v2)))
+
+        # Angular step ring2 → ring3 (same D guarantees equal gap)
+        v3 = (r2**2 + r3**2 - D**2) / (2 * r2 * r3)
+        t3 = t2 + math.acos(max(-1.0, min(1.0, v3)))
+
+        # Centre angle α: balance LLRY (α-t3) above floor and MOTO (α+t3) below ceiling
+        buf = btn_size / 2 + 8
+        alpha_min = t3 + math.asin(min(1.0, buf / r3))          # LLRY clears bottom
+        alpha_max = math.asin(min(1.0, (h - buf) / r3)) - t3    # MOTO clears top
+        alpha = (alpha_min + alpha_max) / 2
+        alpha = max(alpha_min, min(alpha_max if alpha_max > alpha_min else alpha_min, alpha))
+
+        # Map each key to its (angle, radius)
+        arc_pos = {
+            'BUS':  (alpha,      r1),
+            'CAR':  (alpha + t2, r2),
+            'LRY':  (alpha - t2, r2),
+            'MOTO': (alpha + t3, r3),
+            'LLRY': (alpha - t3, r3),
+        }
+
+        for key, btn in self._btns:
+            angle, r = arc_pos[key]
+            dx = r * math.cos(angle)
+            dy = r * math.sin(angle)
 
             if self.corner == 'left':
-                bx = self.x + dx - btn_size/2
-                by = self.y + dy - btn_size/2
-                # Clamp to stay inside cluster
-                bx = max(self.x, bx)
-                by = max(self.y, by)
-                bx = min(self.x + w - btn_size, bx)
-                by = min(self.y + h - btn_size, by)
+                bx = self.x + dx - btn_size / 2
+                by = self.y + dy - btn_size / 2
             else:
-                bx = self.x + w - dx - btn_size/2
-                by = self.y + dy - btn_size/2
-                bx = max(self.x, bx)
-                by = max(self.y, by)
-                bx = min(self.x + w - btn_size, bx)
-                by = min(self.y + h - btn_size, by)
+                bx = self.x + w - dx - btn_size / 2
+                by = self.y + dy - btn_size / 2
+
+            # Hard clamp — never outside cluster frame
+            bx = max(self.x + 2, min(self.x + w - btn_size - 2, bx))
+            by = max(self.y + 2, min(self.y + h - btn_size - 2, by))
 
             btn.size = (btn_size, btn_size)
             btn.pos  = (bx, by)
@@ -431,11 +451,11 @@ class RootLayout(FloatLayout):
         top.add_widget(self.j2_summary)
         self.add_widget(top)
 
-        # ── Clusters ──────────────────────────────────────────
+        # ── Clusters — shifted inward toward timer ────────────
         self.j1_cluster = RainbowCluster(on_tap=self._j1_tap, corner='left',
-                                          size_hint=(0.52,None), pos_hint={'x':0,'y':0})
+                                          size_hint=(0.56,None), pos_hint={'x':0.02,'y':0})
         self.j2_cluster = RainbowCluster(on_tap=self._j2_tap, corner='right',
-                                          size_hint=(0.52,None), pos_hint={'right':1,'y':0})
+                                          size_hint=(0.56,None), pos_hint={'right':0.98,'y':0})
         self.add_widget(self.j1_cluster)
         self.add_widget(self.j2_cluster)
 
