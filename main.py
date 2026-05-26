@@ -253,7 +253,6 @@ def draw_icon(c, key, cx, cy, sz):
 
 
 # ── Asset paths ──────────────────────────────────────────────────────────────
-_ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 _ICON_FILES = {
     'CAR':  'car.png',
     'MOTO': 'moto.png',
@@ -262,9 +261,30 @@ _ICON_FILES = {
     'BUS':  'bus.png',
 }
 
+
+def _asset_dir():
+    candidates = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets'),
+        os.path.join(os.getcwd(), 'assets'),
+        os.path.join(os.path.expanduser('~'), 'assets'),
+        'assets',
+    ]
+    for d in candidates:
+        if os.path.isdir(d):
+            print('ASSETS found at:', d)
+            return d
+    print('ASSETS dir not found, tried:', candidates)
+    return candidates[0]
+
+
+_ASSET_DIR = _asset_dir()
+
+
 def _icon_path(key):
     path = os.path.join(_ASSET_DIR, _ICON_FILES[key])
-    return path if os.path.exists(path) else None
+    exists = os.path.exists(path)
+    print('ICON', key, path, 'OK' if exists else 'MISSING')
+    return path if exists else None
 
 # ── Square button with canvas icon ───────────────────────────────────────────
 class SquareVehicleButton(Button):
@@ -387,16 +407,15 @@ class SquareVehicleButton(Button):
 
 # Left cluster  — col 0 is the outer (left) edge, col 1 is inner (toward timer)
 GRID_KEYS_LEFT = [
-    ["LRY",  None  ],   # row 0 top
-    ["CAR",  "MOTO"],   # row 1  (C<->M swapped)
-    ["BUS",  "LLRY"],   # row 2  (B<->LL swapped)
+    ["LRY",  None],
+    ["MOTO", "CAR"],
+    ["LLRY", "BUS"],
 ]
 
-# Right cluster — horizontal mirror: col 0 is inner, col 1 is outer (right) edge
 GRID_KEYS_RIGHT = [
-    [None,   "LRY" ],   # row 0 top
-    ["MOTO", "CAR" ],   # row 1  (mirrored)
-    ["LLRY", "BUS" ],   # row 2  (mirrored)
+    [None,   "LRY"],
+    ["CAR",  "MOTO"],
+    ["BUS",  "LLRY"],
 ]
 
 class SquareGridCluster(GridLayout):
