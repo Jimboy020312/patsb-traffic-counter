@@ -12,7 +12,10 @@ from kivy.uix.label import Label
 from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
+<<<<<<< HEAD
 from kivy.uix.image import Image as KivyImage
+=======
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
 from kivy.uix.boxlayout import BoxLayout
 from kivy.app import App
 import json
@@ -31,7 +34,11 @@ if platform != 'android':
 SAVE_FILE = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), "traffic_save.json")
 DEFAULT_TIMER = 15 * 60
+<<<<<<< HEAD
 SUMMARY_ORDER_LEFT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]  # C L LL B M
+=======
+SUMMARY_ORDER_LEFT = ["MOTO", "BUS", "LLRY", "LRY", "CAR"]  # M B LL L C
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
 SUMMARY_ORDER_RIGHT = ["CAR",  "LRY", "LLRY", "BUS", "MOTO"]  # C L LL B M
 SUMMARY_ORDER = SUMMARY_ORDER_LEFT  # fallback
 VEHICLES = {
@@ -291,6 +298,7 @@ def draw_icon(c, key, cx, cy, sz):
                 Ellipse(pos=(wx, wheel_y + wr - hub), size=(hub*2, hub*2))
 
 
+<<<<<<< HEAD
 # ── Asset paths ──────────────────────────────────────────────────────────────
 _ASSET_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 _ICON_FILES = {
@@ -309,11 +317,18 @@ def _icon_path(key):
 # ── Square button with canvas icon ───────────────────────────────────────────
 
 
+=======
+# ── Square button with canvas icon ───────────────────────────────────────────
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
 class SquareVehicleButton(Button):
     """
     Square button with:
     - Solid colour fill matching vehicle colour
+<<<<<<< HEAD
     - PNG icon from assets/ (falls back to canvas line-art if missing)
+=======
+    - White line-art vehicle icon drawn via canvas
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
     - Short vehicle code label at bottom
     - Press feedback: darkened fill + white border ring
     """
@@ -329,6 +344,7 @@ class SquareVehicleButton(Button):
         self.circle_color = circle_color
         self.label_text = label_text
         self._pressed = False
+<<<<<<< HEAD
         self.bind(pos=self._redraw, size=self._redraw)
 
         # ── Image widget (PNG icon) ──
@@ -364,6 +380,20 @@ class SquareVehicleButton(Button):
         cr = self.circle_color
 
         with self.canvas.before:
+=======
+        self._icon_group = InstructionGroup()
+        self.bind(pos=self._redraw, size=self._redraw)
+        self._redraw()
+
+    def _redraw(self, *a):
+        self.canvas.before.clear()
+        w, h = self.size
+        r = self.CORNER_RADIUS
+        cr = self.circle_color
+
+        with self.canvas.before:
+            # Outer white ring on press
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
             if self._pressed:
                 ring = 6
                 Color(1, 1, 1, 0.9)
@@ -376,6 +406,7 @@ class SquareVehicleButton(Button):
             else:
                 Color(*cr)
             RoundedRectangle(pos=self.pos, size=self.size, radius=[r])
+<<<<<<< HEAD
 
         lbl_h = 24
         pad = 6
@@ -749,6 +780,385 @@ class RootLayout(FloatLayout):
         self.bind(size=self._layout)
         self.reset_btn.bind(size=self._layout)
         self.j1_summary.chips['MOTO'][0].bind(
+=======
+
+        # Redraw icon on canvas (after background)
+        self.canvas.after.clear()
+        cx = self.x + w / 2
+        # Reserve small strip at bottom for label; icon fills the rest, truly centred
+        lbl_h = 22
+        icon_zone_h = h - lbl_h - 4
+        cy = self.y + lbl_h + 4 + icon_zone_h / 2   # vertically centred in icon zone
+        sz = min(w, icon_zone_h) * 0.92              # as large as zone allows
+
+        with self.canvas.after:
+            draw_icon(self.canvas.after, self.key, cx, cy, sz)
+            # Label text at bottom
+            Color(1, 1, 1, 0.88)
+            # We draw label via Kivy Label widget overlay — see below
+        # Trigger label refresh
+        self._update_label()
+
+    def _update_label(self):
+        # Label is drawn as a sub-widget positioned at bottom of button
+        if not hasattr(self, '_lbl'):
+            self._lbl = Label(
+                text=self.label_text,
+                font_size=15,
+                bold=True,
+                color=(1, 1, 1, 0.90),
+                halign='center',
+                valign='middle',
+            )
+            self._lbl.size_hint = (None, None)
+            self.add_widget(self._lbl)
+        lbl_h = 22
+        self._lbl.size = (self.width, lbl_h)
+        self._lbl.pos = (self.x, self.y + 4)
+        self._lbl.text_size = self._lbl.size
+
+    def on_press(self):
+        self._pressed = True
+        self._redraw()
+
+    def on_release(self):
+        self._pressed = False
+        self._redraw()
+
+
+# ── Square grid cluster ───────────────────────────────────────────────────────
+# Layout philosophy: usage-priority placement
+#   CAR (highest use)  → top row, spans larger / leftmost prominence
+#   MOTO               → second
+#   LRY                → third
+#   BUS                → fourth
+#   LLRY               → fifth (least common)
+#
+# Grid: 2 columns × 3 rows, tight (no gap).
+# Left cluster  → anchor bottom-left, buttons fill inward (right/up)
+# Right cluster → anchor bottom-right, mirror
+
+# Left cluster  — col 0 is the outer (left) edge, col 1 is inner (toward timer)
+GRID_KEYS_LEFT = [
+    ["LRY",  None],
+    ["MOTO", "CAR"],
+    ["LLRY", "BUS"],
+]
+
+GRID_KEYS_RIGHT = [
+    [None,   "LRY"],
+    ["CAR",  "MOTO"],
+    ["BUS",  "LLRY"],
+]
+
+
+class SquareGridCluster(GridLayout):
+    """
+    2-column × 3-row tight grid of square vehicle buttons.
+    Anchored by `corner` ('left' or 'right').
+    Buttons are square and flush — no spacing, thin separator lines only.
+    """
+    SEP = 3   # px between buttons (visual gap / dark separator)
+
+    def __init__(self, on_tap, corner, **kwargs):
+        super().__init__(cols=2, rows=3, spacing=self.SEP, padding=0, **kwargs)
+        self.on_tap = on_tap
+        self.corner = corner
+        self._buttons = {}
+
+        grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
+        for row in grid_keys:
+            for key in row:
+                if key is None:
+                    # Filler cell — dark panel with total label
+                    filler = BoxLayout()
+                    with filler.canvas.before:
+                        Color(0.13, 0.14, 0.18, 1)
+                        self._filler_rect = Rectangle(
+                            pos=filler.pos, size=filler.size)
+                    filler.bind(pos=self._upd_filler, size=self._upd_filler)
+                    self._filler_widget = filler
+                    self.add_widget(filler)
+                else:
+                    short, color = VEHICLES[key]
+                    btn = SquareVehicleButton(
+                        key=key,
+                        circle_color=color,
+                        label_text=short,
+                        size_hint=(1, 1),
+                    )
+                    btn.bind(on_release=lambda b, k=key: self._tap(k))
+                    self._buttons[key] = btn
+                    self.add_widget(btn)
+
+    def _upd_filler(self, w, *a):
+        self._filler_rect.pos = w.pos
+        self._filler_rect.size = w.size
+
+    def _tap(self, key):
+        haptic_tap()
+        self.on_tap(key)
+
+
+# ── Summary chip ──────────────────────────────────────────────────────────────
+class SummaryChip(Button):
+    def __init__(self, chip_color, **kwargs):
+        self._chip_color = chip_color
+        self._dim = tuple(max(0, c * 0.35) if i < 3 else c
+                          for i, c in enumerate(chip_color))
+        self._flash_ev = None
+        super().__init__(background_normal='', background_color=chip_color, **kwargs)
+
+    def flash(self):
+        if self._flash_ev:
+            self._flash_ev.cancel()
+        self.background_color = list(self._dim)
+        self._flash_ev = Clock.schedule_once(
+            lambda dt: setattr(self, 'background_color', list(self._chip_color)), 0.22)
+
+
+class JunctionSummary(BoxLayout):
+    def __init__(self, on_minus, order=None, **kwargs):
+        kwargs.setdefault('orientation', 'horizontal')
+        kwargs.setdefault('spacing', 6)
+        kwargs.setdefault('padding', [8, 6, 8, 6])
+        super().__init__(**kwargs)
+        self.on_minus = on_minus
+        self.counts = {k: 0 for k in VEHICLES}
+        self.chips = {}
+        for key in (order or SUMMARY_ORDER_LEFT):
+            short, color = VEHICLES[key]
+            btn = SummaryChip(chip_color=color, text=f"{short}: 0",
+                              font_size=24, bold=True,
+                              color=(1, 1, 1, 1), size_hint=(1, 1))
+            btn.bind(on_release=lambda b, k=key: self._minus(k))
+            self.chips[key] = (btn, short)
+            self.add_widget(btn)
+
+    def _minus(self, key):
+        if self.counts[key] > 0:
+            self.counts[key] -= 1
+            self._refresh(key)
+            self.chips[key][0].flash()
+            self.on_minus()
+
+    def _refresh(self, key):
+        btn, short = self.chips[key]
+        btn.text = f"{short}: {self.counts[key]}"
+
+    def increment(self, key): self.counts[key] += 1; self._refresh(key)
+    def get_counts(self): return dict(self.counts)
+
+    def set_counts(self, data):
+        for k, v in data.items():
+            if k in self.counts:
+                self.counts[k] = max(0, int(v))
+                self._refresh(k)
+
+    def reset(self):
+        for k in self.counts:
+            self.counts[k] = 0
+            self._refresh(k)
+
+
+# ── Timer widget ──────────────────────────────────────────────────────────────
+BASE_FONT = 48
+
+
+class TimerWidget(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(orientation='vertical', spacing=6, **kwargs)
+        self._duration = DEFAULT_TIMER
+        self._remaining = DEFAULT_TIMER
+        self._running = False
+        self._tick_ev = None
+        self._alert_ev = None
+        self._alert_idx = 0
+
+        self.lbl = Label(text=self._fmt(DEFAULT_TIMER),
+                         font_size=BASE_FONT, bold=True,
+                         color=(0.55, 0.92, 0.55, 1),
+                         size_hint=(1, 1), halign='center', valign='middle')
+        self.lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+        self.add_widget(self.lbl)
+
+        row = BoxLayout(orientation='horizontal', size_hint=(1, None),
+                        height=46, spacing=6, padding=[4, 0, 4, 0])
+        self.btn_ss = self._mk("START", (0.20, 0.60, 0.30, 1))
+        self.btn_ss.bind(on_release=self._toggle)
+        btn_set = self._mk("SET",   (0.25, 0.35, 0.60, 1))
+        btn_set.bind(on_release=self._open_set)
+        btn_rst = self._mk("RESET", (0.55, 0.25, 0.25, 1))
+        btn_rst.bind(on_release=self._reset_timer)
+        for b in (self.btn_ss, btn_set, btn_rst):
+            row.add_widget(b)
+        self.add_widget(row)
+
+    def _mk(self, t, bg):
+        return Button(text=t, font_size=15, bold=True, color=(1, 1, 1, 1),
+                      background_normal='', background_color=bg, size_hint=(1, 1))
+
+    def _fmt(self, secs):
+        m, s = divmod(max(0, int(secs)), 60)
+        return f"{m:02d}:{s:02d}"
+
+    def _toggle(self, *a):
+        self._pause() if self._running else self._start()
+
+    def _start(self):
+        if self._remaining <= 0:
+            return
+        self._running = True
+        self.btn_ss.text = "PAUSE"
+        self.btn_ss.background_color = (0.70, 0.50, 0.10, 1)
+        self._stop_alert()
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self.lbl.font_size = BASE_FONT
+        self._tick_ev = Clock.schedule_interval(self._tick, 1)
+
+    def _pause(self):
+        self._running = False
+        self.btn_ss.text = "START"
+        self.btn_ss.background_color = (0.20, 0.60, 0.30, 1)
+        if self._tick_ev:
+            self._tick_ev.cancel()
+
+    def _tick(self, dt):
+        self._remaining -= 1
+        self.lbl.text = self._fmt(self._remaining)
+        if self._remaining <= 0:
+            self._pause()
+            self._alert()
+
+    def _alert(self):
+        self._alert_idx = 0
+        self._alert_ev = Clock.schedule_interval(self._alert_step, 0.25)
+
+    def _alert_step(self, dt):
+        self._alert_idx += 1
+        phase = self._alert_idx % 2
+        if phase == 0:
+            self.lbl.font_size = BASE_FONT * 1.35
+            self.lbl.color = (1, 0.08, 0.08, 1)
+        else:
+            self.lbl.font_size = BASE_FONT * 0.85
+            self.lbl.color = (0.75, 0.05, 0.05, 1)
+
+    def _stop_alert(self):
+        if self._alert_ev:
+            self._alert_ev.cancel()
+            self._alert_ev = None
+
+    def _reset_timer(self, *a):
+        self._pause()
+        self._stop_alert()
+        self._remaining = self._duration
+        self.lbl.text = self._fmt(self._remaining)
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self.lbl.font_size = BASE_FONT
+
+    def reset_to_default(self): self._reset_timer()
+
+    def stop_alert(self):
+        self._stop_alert()
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self.lbl.font_size = BASE_FONT
+
+    def _open_set(self, *a):
+        self._pause()
+        content = BoxLayout(orientation='vertical', spacing=12, padding=20)
+        content.add_widget(Label(text="Set timer (MM:SS)", font_size=18,
+                                 color=(1, 1, 1, 1), size_hint=(1, None), height=34,
+                                 halign='center'))
+        inp = TextInput(text=self._fmt(self._duration), font_size=32,
+                        foreground_color=(1, 1, 1, 1),
+                        background_color=(0.15, 0.17, 0.21, 1),
+                        cursor_color=(1, 1, 1, 1),
+                        size_hint=(1, None), height=60,
+                        multiline=False, halign='center')
+        content.add_widget(inp)
+        btns = BoxLayout(orientation='horizontal', spacing=10,
+                         size_hint=(1, None), height=56)
+        cancel = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
+        confirm = self._mk("Set",    (0.20, 0.55, 0.30, 1))
+        btns.add_widget(cancel)
+        btns.add_widget(confirm)
+        content.add_widget(btns)
+        popup = Popup(title='Set Timer', title_size=20, content=content,
+                      size_hint=(0.55, 0.58), background_color=(0.14, 0.15, 0.20, 1),
+                      title_color=(1, 1, 1, 1),
+                      separator_color=(0.25, 0.27, 0.32, 1))
+        cancel.bind(on_release=popup.dismiss)
+
+        def _apply(*a):
+            try:
+                p = inp.text.strip().split(':')
+                total = int(p[0]) * 60 + \
+                    int(p[1]) if len(p) == 2 else int(p[0]) * 60
+                self._duration = max(1, total)
+            except:
+                self._duration = DEFAULT_TIMER
+            self._remaining = self._duration
+            self.lbl.text = self._fmt(self._remaining)
+            self.lbl.color = (0.55, 0.92, 0.55, 1)
+            self.lbl.font_size = BASE_FONT
+            self._stop_alert()
+            popup.dismiss()
+        confirm.bind(on_release=_apply)
+        popup.open()
+
+
+# ── Root layout ───────────────────────────────────────────────────────────────
+class RootLayout(FloatLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        # ── Top bar ───────────────────────────────────────────
+        top = BoxLayout(size_hint=(1, None), height=TOP_H,
+                        pos_hint={'x': 0, 'top': 1},
+                        spacing=6, padding=[6, 6, 6, 6])
+        self.j1_summary = JunctionSummary(
+            on_minus=self._save, order=SUMMARY_ORDER_LEFT, size_hint=(0.42, 1))
+        self.reset_btn = Button(text="RESET ALL", font_size=16, bold=True,
+                                color=(1, 1, 1, 1), background_normal='',
+                                background_color=(0.75, 0.20, 0.20, 1), size_hint=(0.16, 1))
+        self.reset_btn.bind(on_release=self._confirm_reset)
+        reset_btn = self.reset_btn
+        self.j2_summary = JunctionSummary(
+            on_minus=self._save, order=SUMMARY_ORDER_RIGHT, size_hint=(0.42, 1))
+        top.add_widget(self.j1_summary)
+        top.add_widget(reset_btn)
+        top.add_widget(self.j2_summary)
+        self.add_widget(top)
+
+        # ── Square grid clusters ──────────────────────────────
+        # Each cluster: 2-col × 3-row grid, positioned at left/right edges
+        # We size them to fill the available height below the top bar
+        self.j1_cluster = SquareGridCluster(
+            on_tap=self._j1_tap, corner='left',
+            size_hint=(None, None),
+            pos_hint={'x': 0, 'y': 0}
+        )
+        self.j2_cluster = SquareGridCluster(
+            on_tap=self._j2_tap, corner='right',
+            size_hint=(None, None),
+            pos_hint={'right': 1, 'y': 0}
+        )
+        self.add_widget(self.j1_cluster)
+        self.add_widget(self.j2_cluster)
+
+        # ── Timer — centred between clusters ─────────────────
+        self.timer_box = BoxLayout(orientation='vertical',
+                                   size_hint=(None, None),
+                                   pos_hint={'center_x': 0.5})
+        self.timer = TimerWidget(size_hint=(1, 1))
+        self.timer_box.add_widget(self.timer)
+        self.add_widget(self.timer_box)
+
+        self.bind(size=self._layout)
+        self.reset_btn.bind(size=self._layout)
+        self.j1_summary.chips['CAR'][0].bind(
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
             pos=self._layout, size=self._layout)
         self.j2_summary.chips['CAR'][0].bind(
             pos=self._layout, size=self._layout)
@@ -758,10 +1168,16 @@ class RootLayout(FloatLayout):
         W, H = self.size
         cluster_h = H - TOP_H
 
+<<<<<<< HEAD
         # Left grid right edge = right edge of MOTO chip (rightmost) in j1_summary
         moto_chip_l = self.j1_summary.chips['MOTO'][0]
         left_grid_w = (moto_chip_l.right if moto_chip_l.width >
                        1 else W * 0.42)
+=======
+        # Left grid right edge = right edge of CAR chip (innermost) in j1_summary
+        car_chip_l = self.j1_summary.chips['CAR'][0]
+        left_grid_w = (car_chip_l.right if car_chip_l.width > 1 else W * 0.42)
+>>>>>>> 1957c56fd81560ca7264787121cf2b565a979995
 
         # Right grid left edge = left edge of CAR chip in j2_summary
         car_chip = self.j2_summary.chips['CAR'][0]
