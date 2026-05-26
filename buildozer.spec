@@ -13,7 +13,7 @@ requirements = python3,kivy,android
 
 orientation = landscape
 
-android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
+android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE, VIBRATE
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
