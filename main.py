@@ -30,7 +30,9 @@ if platform != 'android':
 SAVE_FILE = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), "traffic_save.json")
 DEFAULT_TIMER = 15 * 60
-SUMMARY_ORDER = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]
+SUMMARY_ORDER_LEFT = ["MOTO", "BUS", "LLRY", "LRY", "CAR"]  # M B LL L C
+SUMMARY_ORDER_RIGHT = ["CAR",  "LRY", "LLRY", "BUS", "MOTO"]  # C L LL B M
+SUMMARY_ORDER = SUMMARY_ORDER_LEFT  # fallback
 VEHICLES = {
     "CAR":  ("C",  (0.85, 0.20, 0.20, 1)),
     "MOTO": ("M",  (0.20, 0.72, 0.35, 1)),
@@ -49,29 +51,12 @@ VEHICLES = {
 # left col top→bottom, then right
 GRID_ORDER = ["CAR", "MOTO", "LRY", "BUS", "LLRY"]
 
-TOP_H = 84
+TOP_H = 120
 TIMER_H = 130   # compact — just digits + 3 small buttons
 
 # ── Haptic feedback ──────────────────────────────────────────────────────────
-# ── Haptic: initialise once at startup, call cheaply on every tap ────────────
-_vibrator = None
-
-
-def _init_haptic():
-    global _vibrator
-    try:
-        from jnius import autoclass
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Context = autoclass('android.content.Context')
-        _vibrator = PythonActivity.mActivity.getSystemService(
-            Context.VIBRATOR_SERVICE)
-        print("HAPTIC: vibrator ready:", _vibrator)
-    except Exception as e:
-        print("HAPTIC init failed:", e)
-
-
-# PC debug: flash the window background briefly so you can see haptic is firing
 _haptic_flash_ev = None
+_vibrator = None
 
 
 def _pc_haptic_flash():
@@ -83,10 +68,24 @@ def _pc_haptic_flash():
         lambda dt: setattr(Window, 'clearcolor', (0.08, 0.09, 0.12, 1)), 0.07)
 
 
+def _init_haptic():
+    """Cache the Android vibrator service once at startup."""
+    global _vibrator
+    try:
+        from jnius import autoclass
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Context = autoclass('android.content.Context')
+        _vibrator = PythonActivity.mActivity.getSystemService(
+            Context.VIBRATOR_SERVICE)
+        print("HAPTIC: vibrator acquired:", _vibrator)
+    except Exception as e:
+        print("HAPTIC _init_haptic failed:", e)
+
+
 def haptic_tap():
-    """Short haptic pulse on Android; visible flash on PC for testing."""
+    """30 ms haptic on Android; amber flash on PC for testing."""
     if platform != 'android':
-        _pc_haptic_flash()   # PC: flash background so you can confirm the code fires
+        _pc_haptic_flash()
         return
     global _vibrator
     if _vibrator is None:
@@ -96,12 +95,11 @@ def haptic_tap():
     try:
         from jnius import autoclass
         VibrationEffect = autoclass('android.os.VibrationEffect')
-        effect = VibrationEffect.createOneShot(
-            30, VibrationEffect.DEFAULT_AMPLITUDE)
-        _vibrator.vibrate(effect)
+        _vibrator.vibrate(
+            VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
     except Exception:
         try:
-            _vibrator.vibrate(30)   # pre-API-26 fallback
+            _vibrator.vibrate(30)          # pre-API-26 fallback
         except Exception as e:
             print("HAPTIC vibrate failed:", e)
 
@@ -474,7 +472,7 @@ class SummaryChip(Button):
 
 
 class JunctionSummary(BoxLayout):
-    def __init__(self, on_minus, **kwargs):
+    def __init__(self, on_minus, order=None, **kwargs):
         kwargs.setdefault('orientation', 'horizontal')
         kwargs.setdefault('spacing', 6)
         kwargs.setdefault('padding', [8, 6, 8, 6])
@@ -482,10 +480,10 @@ class JunctionSummary(BoxLayout):
         self.on_minus = on_minus
         self.counts = {k: 0 for k in VEHICLES}
         self.chips = {}
-        for key in SUMMARY_ORDER:
+        for key in (order or SUMMARY_ORDER_LEFT):
             short, color = VEHICLES[key]
             btn = SummaryChip(chip_color=color, text=f"{short}: 0",
-                              font_size=19, bold=True,
+                              font_size=24, bold=True,
                               color=(1, 1, 1, 1), size_hint=(1, 1))
             btn.bind(on_release=lambda b, k=key: self._minus(k))
             self.chips[key] = (btn, short)
@@ -674,14 +672,14 @@ class RootLayout(FloatLayout):
                         pos_hint={'x': 0, 'top': 1},
                         spacing=6, padding=[6, 6, 6, 6])
         self.j1_summary = JunctionSummary(
-            on_minus=self._save, size_hint=(0.42, 1))
+            on_minus=self._save, order=SUMMARY_ORDER_LEFT, size_hint=(0.42, 1))
         self.reset_btn = Button(text="RESET ALL", font_size=16, bold=True,
                                 color=(1, 1, 1, 1), background_normal='',
                                 background_color=(0.75, 0.20, 0.20, 1), size_hint=(0.16, 1))
         self.reset_btn.bind(on_release=self._confirm_reset)
         reset_btn = self.reset_btn
         self.j2_summary = JunctionSummary(
-            on_minus=self._save, size_hint=(0.42, 1))
+            on_minus=self._save, order=SUMMARY_ORDER_RIGHT, size_hint=(0.42, 1))
         top.add_widget(self.j1_summary)
         top.add_widget(reset_btn)
         top.add_widget(self.j2_summary)
@@ -713,7 +711,7 @@ class RootLayout(FloatLayout):
 
         self.bind(size=self._layout)
         self.reset_btn.bind(size=self._layout)
-        self.j1_summary.chips['MOTO'][0].bind(
+        self.j1_summary.chips['CAR'][0].bind(
             pos=self._layout, size=self._layout)
         self.j2_summary.chips['CAR'][0].bind(
             pos=self._layout, size=self._layout)
@@ -723,9 +721,9 @@ class RootLayout(FloatLayout):
         W, H = self.size
         cluster_h = H - TOP_H
 
-        # Left grid right edge = right edge of MOTO chip in j1_summary
-        moto_chip = self.j1_summary.chips['MOTO'][0]
-        left_grid_w = (moto_chip.right if moto_chip.width > 1 else W * 0.42)
+        # Left grid right edge = right edge of CAR chip (innermost) in j1_summary
+        car_chip_l = self.j1_summary.chips['CAR'][0]
+        left_grid_w = (car_chip_l.right if car_chip_l.width > 1 else W * 0.42)
 
         # Right grid left edge = left edge of CAR chip in j2_summary
         car_chip = self.j2_summary.chips['CAR'][0]
