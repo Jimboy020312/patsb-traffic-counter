@@ -43,14 +43,6 @@ VEHICLES = {
     "BUS":  ("B",  (0.85, 0.75, 0.10, 1)),
 }
 
-# Grid layout: 2×3 grid (or shaped), ordered by usage priority
-# CAR (most used) → top-left large; MOTO, LRY, LLRY, BUS fill around
-# We use a 2-column grid:
-#  Row0: CAR    | MOTO
-#  Row1: LRY    | BUS
-#  Row2: LLRY   | (blank / total label)
-# Actually for a tight 2-col 3-row grid both sides:
-# left col top→bottom, then right
 GRID_ORDER = ["CAR", "MOTO", "LRY", "BUS", "LLRY"]
 
 TOP_H = 120
@@ -113,7 +105,6 @@ _snd_alarm = None
 
 def _init_sounds():
     global _snd_tap, _snd_alarm
-    # Tap: short 30ms sine-wave beep generated inline as wav bytes
     import struct
     import math as _math
     import base64
@@ -129,37 +120,32 @@ def _init_sounds():
         return hdr + data
 
     def _make_beep(sr=22050):
-        # Mechanical tock: 300Hz body + 2kHz transient, exponential decay
-        # Sounds like a solid physical key or counter click — not childish
         import math as _m
         n = int(sr * 0.07)
         out = []
         for i in range(n):
             t = i / sr
-            dec = _m.exp(-i / (sr * 0.018))   # fast exponential body decay
-            hit = _m.exp(-i / (sr * 0.004))   # ultra-fast transient
+            dec = _m.exp(-i / (sr * 0.018))
+            hit = _m.exp(-i / (sr * 0.004))
             body = _m.sin(2*_m.pi * 300 * t) * 0.65 * dec
             transient = _m.sin(2*_m.pi * 2200 * t) * 0.45 * hit
             out.append(32767 * (body + transient))
         return _wav(out, sr)
 
     def _make_alarm(sr=22050):
-        # Alarm: thick square-wave buzz — sounds like a real kitchen/sports timer
-        # Square wave = fundamental + odd harmonics → full, buzzy, cuts through noise
         import math as _m
 
         def square(freq, t, n_harm=6):
-            # Additive synthesis of square wave (odd harmonics 1,3,5...)
             s = 0.0
             for k in range(1, n_harm*2, 2):
                 s += _m.sin(2*_m.pi * freq * k * t) / k
-            return s * (4/_m.pi)  # normalise to ~1.0 peak
+            return s * (4/_m.pi)
 
         def beep(freq, dur, vol=0.72):
             n = int(sr * dur)
             seg = []
-            att = int(sr * 0.006)   # 6ms attack
-            rel = int(sr * 0.025)   # 25ms release
+            att = int(sr * 0.006)
+            rel = int(sr * 0.025)
             for i in range(n):
                 t = i / sr
                 if i < att:
@@ -172,7 +158,6 @@ def _init_sounds():
             return seg
 
         out = []
-        # Pattern: three identical sharp bursts — classic oven/stopwatch done signal
         for _ in range(3):
             out.extend(beep(880, 0.18))
             out.extend([0] * int(sr * 0.10))
@@ -214,34 +199,23 @@ def play_alarm():
 
 
 def draw_icon(c, key, cx, cy, sz):
-    """
-    White line-art vehicle icon drawn onto canvas group c.
-    sz is the reference size (button width/height).
-    All coordinates are relative to (cx, cy) = button centre.
-    """
     s = sz / 200.0
     lw = max(1.8, 3.2 * s)
-    wr = 11 * s          # standard wheel radius
+    wr = 11 * s
 
     with c:
         Color(1, 1, 1, 0.95)
 
         if key == 'CAR':
-            # Side-view sedan: long body + raised cabin + 2 wheels
             bw, bh = 110*s, 26*s
             rw, rh = 68*s,  22*s
-            # Main body
             Line(rounded_rectangle=(cx - bw/2, cy - 14*s, bw, bh, 5*s), width=lw)
-            # Roof cabin (slightly right of centre for realistic sedan look)
             Line(rounded_rectangle=(cx - rw/2 + 6*s,
                  cy + 10*s, rw, rh, 6*s), width=lw)
-            # Windscreen hint (diagonal line inside cabin)
             Line(points=[cx - rw/2 + 6*s + 6*s, cy + 10*s,
                          cx - rw/2 + 6*s + 18*s, cy + 10*s + rh], width=lw * 0.6)
-            # Wheels
             Ellipse(pos=(cx - bw/2 + 18*s - wr, cy - 28*s), size=(wr*2, wr*2))
             Ellipse(pos=(cx + bw/2 - 18*s - wr, cy - 28*s), size=(wr*2, wr*2))
-            # Wheel hub dots
             hub = wr * 0.38
             Ellipse(pos=(cx - bw/2 + 18*s - hub, cy -
                     28*s + wr - hub), size=(hub*2, hub*2))
@@ -249,71 +223,52 @@ def draw_icon(c, key, cx, cy, sz):
                     28*s + wr - hub), size=(hub*2, hub*2))
 
         elif key == 'MOTO':
-            # Detailed side-view motorcycle
-            rwr = 21*s    # rear wheel radius
-            fwr = 19*s    # front wheel radius
+            rwr = 21*s
+            fwr = 19*s
             rwx = cx - 42*s
             rwy = cy - 16*s
             fwx = cx + 40*s
             fwy = cy - 12*s
-            # Wheels
             Ellipse(pos=(rwx - rwr, rwy - rwr), size=(rwr*2, rwr*2))
             Ellipse(pos=(fwx - fwr, fwy - fwr), size=(fwr*2, fwr*2))
-            # Wheel hubs
             hub = rwr * 0.32
             Ellipse(pos=(rwx - hub, rwy - hub), size=(hub*2, hub*2))
             hub2 = fwr * 0.32
             Ellipse(pos=(fwx - hub2, fwy - hub2), size=(hub2*2, hub2*2))
-            # Seat / rider position
             sx = cx - 6*s
             sy = rwy + 36*s
-            # Main frame spine: rear axle → seat → neck
             neck_x = fwx - 10*s
             neck_y = fwy + 28*s
             Line(points=[rwx, rwy + rwr, sx, sy, neck_x, neck_y], width=lw)
-            # Swing arm: rear axle → lower frame
             Line(points=[rwx, rwy, cx - 14*s, cy], width=lw * 0.9)
-            # Engine/tank block
             Line(rounded_rectangle=(cx - 28*s, cy - 4 *
                  s, 30*s, 18*s, 3*s), width=lw * 0.85)
-            # Front fork
             Line(points=[fwx, fwy + fwr, neck_x, neck_y], width=lw)
-            # Handlebar
             hbx = neck_x - 4*s
             Line(points=[hbx - 12*s, neck_y + 8*s,
                  hbx + 10*s, neck_y - 6*s], width=lw)
-            # Seat pad
             Line(rounded_rectangle=(sx - 16*s, sy -
                  3*s, 30*s, 10*s, 3*s), width=lw * 0.8)
-            # Exhaust pipe (low, toward rear)
             Line(points=[cx - 10*s, cy - 8*s, rwx +
                  rwr, rwy - rwr * 0.3], width=lw * 0.7)
 
         elif key == 'BUS':
-            # City bus: tall rectangular body, multiple windows, door
             bw, bh = 92*s, 56*s
-            # Body
             Line(rounded_rectangle=(cx - bw/2, cy - bh/2, bw, bh, 3*s), width=lw)
-            # Roof luggage rail (thin line on top)
             Line(points=[cx - bw/2 + 8*s, cy + bh/2 - 4*s,
                          cx + bw/2 - 8*s, cy + bh/2 - 4*s], width=lw * 0.55)
-            # 3 passenger windows
             win_w, win_h = 18*s, 14*s
             win_y = cy + 8*s
             for i in range(3):
                 wx = cx - bw/2 + 8*s + i * 26*s
                 Line(rounded_rectangle=(
                     wx, win_y, win_w, win_h, 2*s), width=lw * 0.75)
-            # Windscreen (front left, from side view)
             Line(rounded_rectangle=(cx - bw/2 + 8*s, cy -
                  2*s, 20*s, 18*s, 2*s), width=lw * 0.75)
-            # Door (right side near rear from viewer perspective)
             Line(rectangle=(cx + bw/2 - 22*s, cy - bh /
                  2 + 4*s, 14*s, 22*s), width=lw * 0.8)
-            # Door split line
             Line(points=[cx + bw/2 - 15*s, cy - bh/2 + 4*s,
                          cx + bw/2 - 15*s, cy - bh/2 + 26*s], width=lw * 0.55)
-            # 2 wheels
             Ellipse(pos=(cx - bw/2 + 20*s - wr, cy -
                     bh/2 - wr * 1.9), size=(wr*2, wr*2))
             Ellipse(pos=(cx + bw/2 - 20*s - wr, cy -
@@ -325,30 +280,22 @@ def draw_icon(c, key, cx, cy, sz):
                     wr * 1.9 + wr - hub), size=(hub*2, hub*2))
 
         elif key == 'LRY':
-            # 2-axle lorry (small truck): cab + short cargo body
             cab_w, cab_h = 32*s, 46*s
             bod_w, bod_h = 64*s, 30*s
-            # Cargo body (left of cab from side view)
             Line(rectangle=(cx - cab_w/2 - bod_w,
                  cy - bod_h/2, bod_w, bod_h), width=lw)
-            # Cargo ribs (2 vertical lines on cargo body)
             for i in range(1, 3):
                 rx = cx - cab_w/2 - bod_w + i * (bod_w / 3)
                 Line(points=[rx, cy - bod_h/2 + 3*s, rx,
                      cy + bod_h/2 - 3*s], width=lw * 0.55)
-            # Cab
             Line(rounded_rectangle=(cx - cab_w/2, cy -
                  bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            # Cab windscreen
             Line(rounded_rectangle=(cx - cab_w/2 + 4*s, cy +
                  4*s, cab_w - 8*s, 14*s, 2*s), width=lw * 0.75)
-            # Cab door line
             Line(points=[cx - cab_w/2 + 4*s, cy - bod_h/2 + 3*s,
                          cx - cab_w/2 + 4*s, cy + 2*s], width=lw * 0.55)
-            # Bumper / grille
             Line(rounded_rectangle=(cx + cab_w/2 - 5*s, cy -
                  bod_h/2 + 2*s, 4*s, 12*s, 1*s), width=lw * 0.7)
-            # 2 axles: front (under cab) + rear (under cargo)
             Ellipse(pos=(cx - wr, cy - bod_h/2 - wr * 2.1), size=(wr*2, wr*2))
             Ellipse(pos=(cx - cab_w/2 - bod_w + 16*s - wr,
                     cy - bod_h/2 - wr * 2.1), size=(wr*2, wr*2))
@@ -359,33 +306,24 @@ def draw_icon(c, key, cx, cy, sz):
                     bod_h/2 - wr * 2.1 + wr - hub), size=(hub*2, hub*2))
 
         elif key == 'LLRY':
-            # 3-axle large lorry / prime mover + long trailer
             cab_w, cab_h = 28*s, 52*s
             bod_w, bod_h = 96*s, 28*s
-            # Long trailer
             Line(rectangle=(cx - cab_w/2 - bod_w,
                  cy - bod_h/2, bod_w, bod_h), width=lw)
-            # Trailer ribs (3 vertical lines)
             for i in range(1, 4):
                 rx = cx - cab_w/2 - bod_w + i * (bod_w / 4)
                 Line(points=[rx, cy - bod_h/2 + 3*s, rx,
                      cy + bod_h/2 - 3*s], width=lw * 0.55)
-            # 5th-wheel coupling hump
             Line(rounded_rectangle=(cx - cab_w/2 - 12*s, cy +
                  bod_h/2 - 2*s, 14*s, 8*s, 2*s), width=lw * 0.7)
-            # Cab
             Line(rounded_rectangle=(cx - cab_w/2, cy -
                  bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            # Cab windscreen
             Line(rounded_rectangle=(cx - cab_w/2 + 4*s, cy +
                  5*s, cab_w - 8*s, 15*s, 2*s), width=lw * 0.75)
-            # Cab door line
             Line(points=[cx - cab_w/2 + 4*s, cy - bod_h/2 + 3*s,
                          cx - cab_w/2 + 4*s, cy + 3*s], width=lw * 0.55)
-            # Bumper / bull bar
             Line(rounded_rectangle=(cx + cab_w/2 - 5*s, cy -
                  bod_h/2 + 2*s, 4*s, 14*s, 1*s), width=lw * 0.7)
-            # 3 axles: front cab, mid trailer, rear trailer
             front_x = cx - wr
             mid_x = cx - cab_w/2 - bod_w * 0.45 - wr
             rear_x = cx - cab_w/2 - bod_w + 14*s - wr
@@ -436,13 +374,6 @@ def _icon_path(key):
 
 
 class SquareVehicleButton(Button):
-    """
-    Square button with:
-    - Solid colour fill matching vehicle colour
-    - PNG icon from assets/ (falls back to canvas line-art if missing)
-    - Short vehicle code label at bottom
-    - Press feedback: darkened fill + white border ring
-    """
     CORNER_RADIUS = 8
 
     def __init__(self, key, circle_color, label_text, **kwargs):
@@ -457,7 +388,6 @@ class SquareVehicleButton(Button):
         self._pressed = False
         self.bind(pos=self._redraw, size=self._redraw)
 
-        # ── Image widget (PNG icon) ──
         self._img = None
         icon_path = _icon_path(key)
         if icon_path:
@@ -469,7 +399,6 @@ class SquareVehicleButton(Button):
             )
             self.add_widget(self._img)
 
-        # ── Label widget ──
         self._lbl = Label(
             text=label_text,
             font_size=15,
@@ -506,17 +435,14 @@ class SquareVehicleButton(Button):
         lbl_h = 24
         pad = 6
 
-        # ── Label at bottom ──
         self._lbl.size = (w, lbl_h)
         self._lbl.pos = (self.x, self.y + pad)
         self._lbl.text_size = self._lbl.size
 
-        # ── Icon: image or canvas fallback ──
         icon_zone_h = h - lbl_h - pad * 2
         icon_zone_y = self.y + lbl_h + pad
 
         if self._img:
-            # Fit icon squarely in icon zone with small padding
             icon_sz = min(w, icon_zone_h) * 0.82
             self._img.size = (icon_sz, icon_sz)
             self._img.pos = (
@@ -524,7 +450,6 @@ class SquareVehicleButton(Button):
                 icon_zone_y + (icon_zone_h - icon_sz) / 2,
             )
         else:
-            # Canvas fallback: line-art
             self.canvas.after.clear()
             cx = self.x + w / 2
             cy = icon_zone_y + icon_zone_h / 2
@@ -542,25 +467,12 @@ class SquareVehicleButton(Button):
 
 
 # ── Square grid cluster ───────────────────────────────────────────────────────
-# Layout philosophy: usage-priority placement
-#   CAR (highest use)  → top row, spans larger / leftmost prominence
-#   MOTO               → second
-#   LRY                → third
-#   BUS                → fourth
-#   LLRY               → fifth (least common)
-#
-# Grid: 2 columns × 3 rows, tight (no gap).
-# Left cluster  → anchor bottom-left, buttons fill inward (right/up)
-# Right cluster → anchor bottom-right, mirror
-
-# Left cluster  — col 0 is the outer (left) edge, col 1 is inner (toward timer)
 GRID_KEYS_LEFT = [
     ["LRY",  None],
     ["MOTO", "CAR"],
     ["LLRY", "BUS"],
 ]
 
-# Right cluster — horizontal mirror: col 0 is inner, col 1 is outer (right) edge
 GRID_KEYS_RIGHT = [
     [None,   "LRY"],
     ["CAR",  "MOTO"],
@@ -569,12 +481,7 @@ GRID_KEYS_RIGHT = [
 
 
 class SquareGridCluster(GridLayout):
-    """
-    2-column × 3-row tight grid of square vehicle buttons.
-    Anchored by `corner` ('left' or 'right').
-    Buttons are square and flush — no spacing, thin separator lines only.
-    """
-    SEP = 3   # px between buttons (visual gap / dark separator)
+    SEP = 3
 
     def __init__(self, on_tap, corner, **kwargs):
         super().__init__(cols=2, rows=3, spacing=self.SEP, padding=0, **kwargs)
@@ -586,7 +493,6 @@ class SquareGridCluster(GridLayout):
         for row in grid_keys:
             for key in row:
                 if key is None:
-                    # Filler cell — dark panel with total label
                     filler = BoxLayout()
                     with filler.canvas.before:
                         Color(0.13, 0.14, 0.18, 1)
@@ -806,7 +712,8 @@ class TimerWidget(BoxLayout):
         content.add_widget(btns)
         popup = Popup(title='Set Timer', title_size=20, content=content,
                       size_hint=(0.62, None), height=260,
-                      pos_hint={'center_x': 0.5, 'top': 0.60},
+                      # anchored near top — keyboard opens below
+                      pos_hint={'center_x': 0.5, 'top': 0.98},
                       background_color=(0.14, 0.15, 0.20, 1),
                       title_color=(1, 1, 1, 1),
                       separator_color=(0.25, 0.27, 0.32, 1))
@@ -841,7 +748,6 @@ class LoadingScreen(FloatLayout):
             self._bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._upd_bg, size=self._upd_bg)
 
-        # Logo / title
         title = Label(
             text='PATSB',
             font_size=72, bold=True,
@@ -872,18 +778,16 @@ class LoadingScreen(FloatLayout):
         )
         self.add_widget(self._status)
 
-        # Animated progress bar (canvas-drawn, reliable everywhere)
         self._bar_widget = FloatLayout(
             size_hint=(0.5, None), height=14,
             pos_hint={'center_x': 0.5, 'center_y': 0.16},
         )
         self.add_widget(self._bar_widget)
-        self._bar_progress = 0.0   # 0.0 → 1.0
+        self._bar_progress = 0.0
         self._target = 0.0
         self._bar_ev = Clock.schedule_interval(self._animate, 0.03)
         self._bar_widget.bind(pos=self._draw_bar, size=self._draw_bar)
 
-        # Start load sequence
         Clock.schedule_once(self._step1, 0.3)
 
     def _upd_bg(self, *a):
@@ -897,17 +801,14 @@ class LoadingScreen(FloatLayout):
         if bw < 1:
             return
         with w.canvas:
-            # Track
             Color(0.20, 0.22, 0.28, 1)
             RoundedRectangle(pos=(w.x, w.y), size=(bw, bh), radius=[bh/2])
-            # Fill
             Color(0.10, 0.45, 0.90, 1)
             fill_w = max(bh, bw * self._bar_progress)
             RoundedRectangle(pos=(w.x, w.y), size=(fill_w, bh), radius=[bh/2])
 
     def _animate(self, dt):
         target = getattr(self, '_target', 0.38)
-        # Ease toward target — fast when far, slows as it approaches
         gap = target - self._bar_progress
         if gap > 0:
             self._bar_progress += max(0.002, gap * 0.08)
@@ -917,7 +818,7 @@ class LoadingScreen(FloatLayout):
     def _step1(self, dt):
         self._status.text = 'Loading sounds...'
         _init_sounds()
-        self._target = 0.40   # bar target after sounds
+        self._target = 0.40
         Clock.schedule_once(self._step2, 0.5)
 
     def _step2(self, dt):
@@ -928,7 +829,6 @@ class LoadingScreen(FloatLayout):
     def _step3(self, dt):
         self._status.text = 'Ready!'
         self._target = 1.0
-        # Wait for bar to actually reach 1.0 before launching
         Clock.schedule_interval(self._wait_full, 0.05)
 
     def _wait_full(self, dt):
@@ -949,7 +849,6 @@ class RootLayout(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        # ── Top bar ───────────────────────────────────────────
         top = BoxLayout(size_hint=(1, None), height=TOP_H,
                         pos_hint={'x': 0, 'top': 1},
                         spacing=6, padding=[6, 6, 6, 6])
@@ -967,9 +866,6 @@ class RootLayout(FloatLayout):
         top.add_widget(self.j2_summary)
         self.add_widget(top)
 
-        # ── Square grid clusters ──────────────────────────────
-        # Each cluster: 2-col × 3-row grid, positioned at left/right edges
-        # We size them to fill the available height below the top bar
         self.j1_cluster = SquareGridCluster(
             on_tap=self._j1_tap, corner='left',
             size_hint=(None, None),
@@ -983,7 +879,6 @@ class RootLayout(FloatLayout):
         self.add_widget(self.j1_cluster)
         self.add_widget(self.j2_cluster)
 
-        # ── Timer — centred between clusters ─────────────────
         self.timer_box = BoxLayout(orientation='vertical',
                                    size_hint=(None, None),
                                    pos_hint={'center_x': 0.5})
@@ -1003,27 +898,22 @@ class RootLayout(FloatLayout):
         W, H = self.size
         cluster_h = H - TOP_H
 
-        # Left grid right edge = right edge of MOTO chip (rightmost) in j1_summary
         moto_chip_l = self.j1_summary.chips['MOTO'][0]
         left_grid_w = (moto_chip_l.right if moto_chip_l.width >
                        1 else W * 0.42)
 
-        # Right grid left edge = left edge of CAR chip in j2_summary
         car_chip = self.j2_summary.chips['CAR'][0]
         right_grid_x = (car_chip.x if car_chip.width > 1 else W * 0.58)
         right_grid_w = W - right_grid_x
 
         grid_h = cluster_h
 
-        # Left cluster: flush left, width up to MOTO chip right edge
         self.j1_cluster.size = (left_grid_w, grid_h)
         self.j1_cluster.pos = (0, 0)
 
-        # Right cluster: starts at CAR chip left edge, flush right
         self.j2_cluster.size = (right_grid_w, grid_h)
         self.j2_cluster.pos = (right_grid_x, 0)
 
-        # Timer: same width as RESET ALL, centred, vertically centred
         timer_w = self.reset_btn.width if self.reset_btn.width > 1 else W * 0.16
         timer_h = min(TIMER_H, cluster_h - 12)
         self.timer_box.size = (timer_w, timer_h)
