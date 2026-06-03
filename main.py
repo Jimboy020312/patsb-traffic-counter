@@ -23,7 +23,6 @@ import math
 from kivy.config import Config
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'show_cursor', '1')
-Config.set('kivy', 'show_kivy_logo', '0')
 
 
 Window.clearcolor = (0.08, 0.09, 0.12, 1)
@@ -33,9 +32,9 @@ if platform != 'android':
 SAVE_FILE = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), "traffic_save.json")
 DEFAULT_TIMER = 15 * 60
-SUMMARY_ORDER_LEFT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]  # C L LL B M
-SUMMARY_ORDER_RIGHT = ["CAR",  "LRY", "LLRY", "BUS", "MOTO"]  # C L LL B M
-SUMMARY_ORDER = SUMMARY_ORDER_LEFT  # fallback
+SUMMARY_ORDER_LEFT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]
+SUMMARY_ORDER_RIGHT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]
+SUMMARY_ORDER = SUMMARY_ORDER_LEFT
 VEHICLES = {
     "CAR":  ("C",  (0.85, 0.20, 0.20, 1)),
     "MOTO": ("M",  (0.20, 0.72, 0.35, 1)),
@@ -47,7 +46,7 @@ VEHICLES = {
 GRID_ORDER = ["CAR", "MOTO", "LRY", "BUS", "LLRY"]
 
 TOP_H = 120
-TIMER_H = 130   # compact — just digits + 3 small buttons
+TIMER_H = 130
 
 # ── Haptic feedback ──────────────────────────────────────────────────────────
 _haptic_flash_ev = None
@@ -64,7 +63,6 @@ def _pc_haptic_flash():
 
 
 def _init_haptic():
-    """Cache the Android vibrator service once at startup."""
     global _vibrator
     try:
         from jnius import autoclass
@@ -78,7 +76,6 @@ def _init_haptic():
 
 
 def haptic_tap():
-    """30 ms haptic on Android; amber flash on PC for testing."""
     if platform != 'android':
         _pc_haptic_flash()
         return
@@ -94,7 +91,7 @@ def haptic_tap():
             VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
     except Exception:
         try:
-            _vibrator.vibrate(30)          # pre-API-26 fallback
+            _vibrator.vibrate(30)
         except Exception as e:
             print("HAPTIC vibrate failed:", e)
 
@@ -196,9 +193,8 @@ def play_alarm():
         _snd_alarm.stop()
         _snd_alarm.play()
 
+
 # ── Vehicle icon drawing ─────────────────────────────────────────────────────
-
-
 def draw_icon(c, key, cx, cy, sz):
     s = sz / 200.0
     lw = max(1.8, 3.2 * s)
@@ -337,6 +333,80 @@ def draw_icon(c, key, cx, cy, sz):
                 Ellipse(pos=(wx, wheel_y + wr - hub), size=(hub*2, hub*2))
 
 
+# ── START/PAUSE canvas button ─────────────────────────────────────────────────
+class StartPauseButton(Button):
+    """
+    Dark bg, white circle outline, play triangle or pause bars inside.
+    No text. State toggled externally via set_playing(bool).
+    """
+    CORNER = 8
+    # near-black, distinct from all vehicle colours
+    BG = (0.10, 0.11, 0.15, 1)
+    BG_PRESSED = (0.18, 0.20, 0.26, 1)
+
+    def __init__(self, **kwargs):
+        super().__init__(background_normal='', background_color=(0, 0, 0, 0), **kwargs)
+        self._playing = False
+        self._pressed = False
+        self.bind(pos=self._redraw, size=self._redraw)
+
+    def set_playing(self, val):
+        self._playing = val
+        self._redraw()
+
+    def _redraw(self, *a):
+        self.canvas.before.clear()
+        self.canvas.after.clear()
+        w, h = self.size
+        cx = self.x + w / 2
+        cy = self.y + h / 2
+        r = self.CORNER
+        bg = self.BG_PRESSED if self._pressed else self.BG
+
+        with self.canvas.before:
+            Color(*bg)
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[r])
+
+        with self.canvas.after:
+            # Circle outline
+            cr = min(w, h) * 0.36
+            lw = max(2.0, cr * 0.10)
+            Color(1, 1, 1, 0.90)
+            Line(circle=(cx, cy, cr), width=lw)
+
+            if not self._playing:
+                # Play triangle — slightly right-offset inside circle
+                tri_r = cr * 0.50
+                ox = cx + tri_r * 0.12   # nudge right so it looks centred optically
+                pts = [
+                    ox - tri_r * 0.55, cy - tri_r * 0.70,
+                    ox - tri_r * 0.55, cy + tri_r * 0.70,
+                    ox + tri_r * 0.72, cy,
+                ]
+                Color(1, 1, 1, 0.95)
+                Triangle(points=pts)
+            else:
+                # Pause — two rounded bars
+                bw = cr * 0.20
+                bh = cr * 0.72
+                gap = cr * 0.18
+                Color(1, 1, 1, 0.95)
+                RoundedRectangle(
+                    pos=(cx - gap - bw, cy - bh / 2),
+                    size=(bw, bh), radius=[bw * 0.4])
+                RoundedRectangle(
+                    pos=(cx + gap, cy - bh / 2),
+                    size=(bw, bh), radius=[bw * 0.4])
+
+    def on_press(self):
+        self._pressed = True
+        self._redraw()
+
+    def on_release(self):
+        self._pressed = False
+        self._redraw()
+
+
 # ── Asset paths ──────────────────────────────────────────────────────────────
 _ICON_FILES = {
     'CAR':  'car.png',
@@ -371,9 +441,8 @@ def _icon_path(key):
     print('ICON', key, path, 'OK' if exists else 'MISSING')
     return path if exists else None
 
+
 # ── Square button with canvas icon ───────────────────────────────────────────
-
-
 class SquareVehicleButton(Button):
     CORNER_RADIUS = 8
 
@@ -410,7 +479,6 @@ class SquareVehicleButton(Button):
             size_hint=(None, None),
         )
         self.add_widget(self._lbl)
-
         self._redraw()
 
     def _redraw(self, *a):
@@ -484,24 +552,33 @@ GRID_KEYS_RIGHT = [
 class SquareGridCluster(GridLayout):
     SEP = 3
 
-    def __init__(self, on_tap, corner, **kwargs):
+    def __init__(self, on_tap, corner, timer_widget=None, **kwargs):
         super().__init__(cols=2, rows=3, spacing=self.SEP, padding=0, **kwargs)
         self.on_tap = on_tap
         self.corner = corner
         self._buttons = {}
+        self._timer_widget = timer_widget
 
         grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         for row in grid_keys:
             for key in row:
                 if key is None:
-                    filler = BoxLayout()
-                    with filler.canvas.before:
-                        Color(0.13, 0.14, 0.18, 1)
-                        self._filler_rect = Rectangle(
-                            pos=filler.pos, size=filler.size)
-                    filler.bind(pos=self._upd_filler, size=self._upd_filler)
-                    self._filler_widget = filler
-                    self.add_widget(filler)
+                    if corner == 'right' and timer_widget is not None:
+                        sp_btn = StartPauseButton(size_hint=(1, 1))
+                        sp_btn.bind(
+                            on_release=lambda b: timer_widget._toggle())
+                        timer_widget._ext_btn_ss = sp_btn
+                        self.add_widget(sp_btn)
+                    else:
+                        filler = BoxLayout()
+                        with filler.canvas.before:
+                            Color(0.13, 0.14, 0.18, 1)
+                            self._filler_rect = Rectangle(
+                                pos=filler.pos, size=filler.size)
+                        filler.bind(pos=self._upd_filler,
+                                    size=self._upd_filler)
+                        self._filler_widget = filler
+                        self.add_widget(filler)
                 else:
                     short, color = VEHICLES[key]
                     btn = SquareVehicleButton(
@@ -600,6 +677,7 @@ class TimerWidget(BoxLayout):
         self._tick_ev = None
         self._alert_ev = None
         self._alert_idx = 0
+        self._ext_btn_ss = None   # set by SquareGridCluster after construction
 
         self.lbl = Label(text=self._fmt(DEFAULT_TIMER),
                          font_size=BASE_FONT, bold=True,
@@ -610,13 +688,11 @@ class TimerWidget(BoxLayout):
 
         row = BoxLayout(orientation='horizontal', size_hint=(1, None),
                         height=46, spacing=6, padding=[4, 0, 4, 0])
-        self.btn_ss = self._mk("START", (0.20, 0.60, 0.30, 1))
-        self.btn_ss.bind(on_release=self._toggle)
         btn_set = self._mk("SET",   (0.25, 0.35, 0.60, 1))
         btn_set.bind(on_release=self._open_set)
         btn_rst = self._mk("RESET", (0.55, 0.25, 0.25, 1))
         btn_rst.bind(on_release=self._reset_timer)
-        for b in (self.btn_ss, btn_set, btn_rst):
+        for b in (btn_set, btn_rst):
             row.add_widget(b)
         self.add_widget(row)
 
@@ -631,12 +707,15 @@ class TimerWidget(BoxLayout):
     def _toggle(self, *a):
         self._pause() if self._running else self._start()
 
+    def _set_btn_state(self, running):
+        if self._ext_btn_ss is not None:
+            self._ext_btn_ss.set_playing(running)
+
     def _start(self):
         if self._remaining <= 0:
             return
         self._running = True
-        self.btn_ss.text = "PAUSE"
-        self.btn_ss.background_color = (0.70, 0.50, 0.10, 1)
+        self._set_btn_state(True)
         self._stop_alert()
         self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
@@ -644,8 +723,7 @@ class TimerWidget(BoxLayout):
 
     def _pause(self):
         self._running = False
-        self.btn_ss.text = "START"
-        self.btn_ss.background_color = (0.20, 0.60, 0.30, 1)
+        self._set_btn_state(False)
         if self._tick_ev:
             self._tick_ev.cancel()
 
@@ -693,17 +771,45 @@ class TimerWidget(BoxLayout):
 
     def _open_set(self, *a):
         self._pause()
+        prev_duration = self._duration
+        prev_m, prev_s = divmod(prev_duration, 60)
+
         content = BoxLayout(orientation='vertical', spacing=12, padding=20)
-        content.add_widget(Label(text="Set timer (MM:SS)", font_size=18,
+        content.add_widget(Label(text="Set Timer", font_size=20, bold=True,
                                  color=(1, 1, 1, 1), size_hint=(1, None), height=34,
                                  halign='center'))
-        inp = TextInput(text=self._fmt(self._duration), font_size=32,
-                        foreground_color=(1, 1, 1, 1),
-                        background_color=(0.15, 0.17, 0.21, 1),
-                        cursor_color=(1, 1, 1, 1),
-                        size_hint=(1, None), height=60,
-                        multiline=False, halign='center')
-        content.add_widget(inp)
+
+        time_row = BoxLayout(orientation='horizontal', size_hint=(1, None),
+                             height=70, spacing=0)
+        inp_m = TextInput(
+            hint_text="MM", text="",
+            font_size=36,
+            foreground_color=(1, 1, 1, 1),
+            hint_text_color=(0.5, 0.5, 0.5, 1),
+            background_color=(0.15, 0.17, 0.21, 1),
+            cursor_color=(1, 1, 1, 1),
+            size_hint=(1, 1),
+            multiline=False, halign='center',
+            input_filter='int',
+        )
+        colon = Label(text=":", font_size=36, bold=True,
+                      color=(1, 1, 1, 1), size_hint=(None, 1), width=28)
+        inp_s = TextInput(
+            hint_text="SS", text="",
+            font_size=36,
+            foreground_color=(1, 1, 1, 1),
+            hint_text_color=(0.5, 0.5, 0.5, 1),
+            background_color=(0.15, 0.17, 0.21, 1),
+            cursor_color=(1, 1, 1, 1),
+            size_hint=(1, 1),
+            multiline=False, halign='center',
+            input_filter='int',
+        )
+        time_row.add_widget(inp_m)
+        time_row.add_widget(colon)
+        time_row.add_widget(inp_s)
+        content.add_widget(time_row)
+
         btns = BoxLayout(orientation='horizontal', spacing=10,
                          size_hint=(1, None), height=56)
         cancel = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
@@ -711,29 +817,39 @@ class TimerWidget(BoxLayout):
         btns.add_widget(cancel)
         btns.add_widget(confirm)
         content.add_widget(btns)
+
         popup = Popup(title='Set Timer', title_size=20, content=content,
-                      size_hint=(0.62, None), height=260,
-                      # anchored near top — keyboard opens below
+                      size_hint=(0.55, None), height=280,
                       pos_hint={'center_x': 0.5, 'top': 0.98},
                       background_color=(0.14, 0.15, 0.20, 1),
                       title_color=(1, 1, 1, 1),
                       separator_color=(0.25, 0.27, 0.32, 1))
-        cancel.bind(on_release=popup.dismiss)
+
+        def _cancel(*a):
+            self._duration = prev_duration
+            self._remaining = prev_duration
+            self.lbl.text = self._fmt(prev_duration)
+            popup.dismiss()
 
         def _apply(*a):
             try:
-                p = inp.text.strip().split(':')
-                total = int(p[0]) * 60 + \
-                    int(p[1]) if len(p) == 2 else int(p[0]) * 60
+                m_val = int(inp_m.text.strip()
+                            ) if inp_m.text.strip() else prev_m
+                s_val = int(inp_s.text.strip()
+                            ) if inp_s.text.strip() else prev_s
+                s_val = max(0, min(59, s_val))
+                total = m_val * 60 + s_val
                 self._duration = max(1, total)
-            except:
-                self._duration = DEFAULT_TIMER
+            except Exception:
+                self._duration = prev_duration
             self._remaining = self._duration
             self.lbl.text = self._fmt(self._remaining)
             self.lbl.color = (0.55, 0.92, 0.55, 1)
             self.lbl.font_size = BASE_FONT
             self._stop_alert()
             popup.dismiss()
+
+        cancel.bind(on_release=_cancel)
         confirm.bind(on_release=_apply)
         popup.open()
 
@@ -843,9 +959,8 @@ class LoadingScreen(FloatLayout):
             self._bar_ev.cancel()
         self._on_done()
 
+
 # ── Root layout ───────────────────────────────────────────────────────────────
-
-
 class RootLayout(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -859,13 +974,14 @@ class RootLayout(FloatLayout):
                                 color=(1, 1, 1, 1), background_normal='',
                                 background_color=(0.75, 0.20, 0.20, 1), size_hint=(0.16, 1))
         self.reset_btn.bind(on_release=self._confirm_reset)
-        reset_btn = self.reset_btn
         self.j2_summary = JunctionSummary(
             on_minus=self._save, order=SUMMARY_ORDER_RIGHT, size_hint=(0.42, 1))
         top.add_widget(self.j1_summary)
-        top.add_widget(reset_btn)
+        top.add_widget(self.reset_btn)
         top.add_widget(self.j2_summary)
         self.add_widget(top)
+
+        self.timer = TimerWidget(size_hint=(1, 1))
 
         self.j1_cluster = SquareGridCluster(
             on_tap=self._j1_tap, corner='left',
@@ -874,6 +990,7 @@ class RootLayout(FloatLayout):
         )
         self.j2_cluster = SquareGridCluster(
             on_tap=self._j2_tap, corner='right',
+            timer_widget=self.timer,
             size_hint=(None, None),
             pos_hint={'right': 1, 'y': 0}
         )
@@ -883,7 +1000,6 @@ class RootLayout(FloatLayout):
         self.timer_box = BoxLayout(orientation='vertical',
                                    size_hint=(None, None),
                                    pos_hint={'center_x': 0.5})
-        self.timer = TimerWidget(size_hint=(1, 1))
         self.timer_box.add_widget(self.timer)
         self.add_widget(self.timer_box)
 
@@ -907,12 +1023,10 @@ class RootLayout(FloatLayout):
         right_grid_x = (car_chip.x if car_chip.width > 1 else W * 0.58)
         right_grid_w = W - right_grid_x
 
-        grid_h = cluster_h
-
-        self.j1_cluster.size = (left_grid_w, grid_h)
+        self.j1_cluster.size = (left_grid_w, cluster_h)
         self.j1_cluster.pos = (0, 0)
 
-        self.j2_cluster.size = (right_grid_w, grid_h)
+        self.j2_cluster.size = (right_grid_w, cluster_h)
         self.j2_cluster.pos = (right_grid_x, 0)
 
         timer_w = self.reset_btn.width if self.reset_btn.width > 1 else W * 0.16
@@ -955,8 +1069,8 @@ class RootLayout(FloatLayout):
         def _mk(t, bg):
             return Button(text=t, font_size=18, bold=True, color=(1, 1, 1, 1),
                           background_normal='', background_color=bg, size_hint=(1, 1))
-        cancel = _mk("Cancel",     (0.30, 0.32, 0.38, 1))
-        confirm = _mk("Yes, Reset", (0.75, 0.20, 0.20, 1))
+        cancel = _mk("Cancel", (0.30, 0.32, 0.38, 1))
+        confirm = _mk("Reset",  (0.75, 0.20, 0.20, 1))
         btns.add_widget(cancel)
         btns.add_widget(confirm)
         content.add_widget(btns)
