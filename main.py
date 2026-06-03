@@ -23,6 +23,7 @@ import math
 from kivy.config import Config
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'show_cursor', '1')
+Config.set('kivy', 'show_kivy_logo', '0')
 
 
 Window.clearcolor = (0.08, 0.09, 0.12, 1)
