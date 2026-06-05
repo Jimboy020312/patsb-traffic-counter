@@ -23,6 +23,15 @@ import math
 from kivy.config import Config
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'show_cursor', '1')
+# Disable the 200ms tap-vs-scroll detection delay that Kivy adds on Android APKs.
+# Without this, every touch is held for up to 200ms before being dispatched.
+Config.set('input', 'mouse', 'mouse,disable_multitouch')
+Config.set('postproc', 'double_tap_time', '0')
+Config.set('postproc', 'double_tap_distance', '0')
+Config.set('postproc', 'retain_time', '0')
+Config.set('postproc', 'retain_distance', '0')
+Config.set('postproc', 'jitter_distance', '0')
+Config.set('postproc', 'jitter_ignore_devices', 'mouse,mactouch,')
 
 
 Window.clearcolor = (0.08, 0.09, 0.12, 1)
