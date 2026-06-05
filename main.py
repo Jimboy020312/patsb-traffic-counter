@@ -1,26 +1,34 @@
 """
 PATSB Traffic Counter — Kivy landscape, square grid clusters with haptic feedback
 """
-from kivy.clock import Clock
+from kivy.config import Config
+import math
+import json
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.image import Image as KivyImage
+from kivy.core.audio import SoundLoader
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
+from kivy.uix.textinput import TextInput
+from kivy.core.window import Window
+from kivy.utils import platform
 from kivy.graphics import (Color, Ellipse, Line, RoundedRectangle,
                            Rectangle, Triangle, Bezier, InstructionGroup)
-from kivy.utils import platform
-from kivy.core.window import Window
-from kivy.uix.textinput import TextInput
-from kivy.uix.popup import Popup
-from kivy.uix.label import Label
-from kivy.uix.button import Button
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.floatlayout import FloatLayout
-from kivy.core.audio import SoundLoader
-from kivy.uix.image import Image as KivyImage
-from kivy.uix.boxlayout import BoxLayout
-from kivy.app import App
-import json
+from kivy.clock import Clock
 import os
-import math
+# Must be set before ANY kivy import — forces zero-delay touch on APK
+os.environ['KIVY_BCM_DISPMANX_ID'] = '0'
+os.environ['KCFG_POSTPROC_DOUBLE_TAP_TIME'] = '0'
+os.environ['KCFG_POSTPROC_DOUBLE_TAP_DISTANCE'] = '0'
+os.environ['KCFG_POSTPROC_RETAIN_TIME'] = '0'
+os.environ['KCFG_POSTPROC_RETAIN_DISTANCE'] = '0'
+os.environ['KCFG_POSTPROC_JITTER_DISTANCE'] = '0'
 
-from kivy.config import Config
+
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'show_cursor', '1')
 # Disable the 200ms tap-vs-scroll detection delay that Kivy adds on Android APKs.
@@ -587,9 +595,26 @@ class SquareVehicleButton(Button):
                 Color(*self._col_normal[1])
             RoundedRectangle(pos=self.pos, size=self.size, radius=[self._r])
 
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            touch.grab(self)
+            self._pressed = True
+            self._redraw_bg()
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            self._pressed = False
+            self._redraw_bg()
+            if self.collide_point(*touch.pos):
+                self.dispatch('on_release')
+            return True
+        return super().on_touch_up(touch)
+
     def on_press(self):
-        self._pressed = True
-        self._redraw_bg()
+        pass  # handled by on_touch_down
 
     def on_release(self):
         self._pressed = False
@@ -1163,6 +1188,18 @@ class TrafficCounterApp(App):
         if platform == 'android':
             _init_haptic()
             Window.update_viewport()
+            # Replace the default android touch provider with one that has
+            # zero postprocessing — this is the only reliable way on a
+            # packaged APK since the config file may already be baked in.
+            try:
+                from kivy.base import EventLoop
+                from kivy.input.providers.androidjoystick import AndroidMotionEventProvider
+                # Remove existing providers and re-add without postproc
+                EventLoop.remove_input_provider_by_name('android')
+                EventLoop.add_input_provider(
+                    AndroidMotionEventProvider('android', ''))
+            except Exception as e:
+                print("Touch provider override failed:", e)
 
     def on_stop(self):
         # Flush any pending debounced save immediately on app exit.
