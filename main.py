@@ -454,10 +454,14 @@ class StartPauseButton(IconButton):
 
 # ── UNDO button ───────────────────────────────────────────────────────────────
 class UndoButton(IconButton):
-    """Dark icon button that shows assets/undo.png centred inside."""
+    """Dark icon button that shows assets/undo.png centred inside.
+    Call set_available(True/False) to enable or dim it."""
+
+    BG_DISABLED = (0.10, 0.11, 0.15, 1)   # same as normal BG but icon dimmed
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._available = False   # disabled until a Reset All is performed
         icon_path = os.path.join(_asset_dir(), 'undo.png')
         self._img = None
         if os.path.exists(icon_path):
@@ -467,9 +471,19 @@ class UndoButton(IconButton):
         else:
             print('ICON undo', icon_path,
                   'MISSING — place a 256x256 RGBA PNG there')
+        self._update_opacity()
+
+    def set_available(self, val):
+        self._available = val
+        self._update_opacity()
+
+    def _update_opacity(self):
+        # Dim the icon and tint the background when unavailable
+        if self._img:
+            self._img.opacity = 1.0 if self._available else 0.25
+        self._redraw()
 
     def _draw_icon(self):
-        # Position the PNG image centred in the button, scaled to ~65% of the cell
         if self._img is None:
             return
         w, h = self.size
@@ -657,7 +671,9 @@ class SquareGridCluster(GridLayout):
                         ub = UndoButton(size_hint=(1, 1))
                         # Undo uses the same soft-click sound as Start/Pause
                         ub.bind(on_release=lambda b: (
-                            haptic_tap(), play_startpause(), on_undo()))
+                            haptic_tap(), play_startpause(), on_undo())
+                            if ub._available else None)
+                        self._undo_btn = ub
                         self.add_widget(ub)
                     else:
                         filler = BoxLayout()
@@ -1161,6 +1177,7 @@ class RootLayout(FloatLayout):
         self.timer.stop_alert()
         self.timer.reset_to_default()
         self._save()
+        self._set_undo_available(True)
 
     def _do_undo(self):
         if self._undo_snapshot is None:
@@ -1170,6 +1187,11 @@ class RootLayout(FloatLayout):
         self.j2_summary.set_counts(j2_snap)
         self._undo_snapshot = None
         self._save()
+        self._set_undo_available(False)
+
+    def _set_undo_available(self, val):
+        if hasattr(self.j1_cluster, '_undo_btn'):
+            self.j1_cluster._undo_btn.set_available(val)
 
 
 class TrafficCounterApp(App):
