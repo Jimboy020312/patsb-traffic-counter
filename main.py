@@ -94,13 +94,17 @@ def haptic_tap():
 
 
 # ── Sound effects ─────────────────────────────────────────────────────────────
-_snd_tap = None
-_snd_alarm = None
-_snd_startpause = None
+# Each short sound keeps a pool of POOL_SIZE pre-loaded instances so rapid
+# taps never have to wait for a previous play() to finish — no stop() stall.
+_POOL_SIZE = 3
+_pool_tap = []
+_pool_click = []
+_pool_alarm = []
+_pool_idx = {'tap': 0, 'click': 0, 'alarm': 0}
 
 
 def _init_sounds():
-    global _snd_tap, _snd_alarm, _snd_startpause
+    global _pool_tap, _pool_click, _pool_alarm
 
     def _wav(samples, sr=22050):
         import struct as _s
@@ -167,49 +171,61 @@ def _init_sounds():
             out.extend([0] * int(sr * 0.10))
         return _wav(out, sr)
 
+    def _make_pool(path, vol, size):
+        pool = []
+        for _ in range(size):
+            s = SoundLoader.load(path)
+            if s:
+                s.volume = vol
+                pool.append(s)
+        return pool
+
     try:
         import tempfile
         import os as _os
         td = tempfile.gettempdir()
         paths = {
-            'tap':   (_os.path.join(td, 'patsb_tap.wav'),        _make_beep()),
-            'click': (_os.path.join(td, 'patsb_click.wav'),      _make_soft_click()),
-            'alarm': (_os.path.join(td, 'patsb_alarm.wav'),      _make_alarm()),
+            'tap':   (_os.path.join(td, 'patsb_tap.wav'),   _make_beep()),
+            'click': (_os.path.join(td, 'patsb_click.wav'), _make_soft_click()),
+            'alarm': (_os.path.join(td, 'patsb_alarm.wav'), _make_alarm()),
         }
         for key, (path, data) in paths.items():
             with open(path, 'wb') as f:
                 f.write(data)
-        _snd_tap = SoundLoader.load(paths['tap'][0])
-        _snd_startpause = SoundLoader.load(paths['click'][0])
-        _snd_alarm = SoundLoader.load(paths['alarm'][0])
-        if _snd_tap:
-            _snd_tap.volume = 0.5
-        if _snd_startpause:
-            _snd_startpause.volume = 0.45
-        if _snd_alarm:
-            _snd_alarm.volume = 0.8
-        print("SOUND: tap=%s click=%s alarm=%s" %
-              (_snd_tap, _snd_startpause, _snd_alarm))
+        _pool_tap = _make_pool(paths['tap'][0],   0.5,  _POOL_SIZE)
+        _pool_click = _make_pool(paths['click'][0], 0.45, _POOL_SIZE)
+        _pool_alarm = _make_pool(paths['alarm'][0], 0.8,  1)
+        print("SOUND pools: tap=%d click=%d alarm=%d" %
+              (len(_pool_tap), len(_pool_click), len(_pool_alarm)))
     except Exception as e:
         print("SOUND init failed:", e)
 
 
-def play_tap():
-    if _snd_tap:
-        _snd_tap.stop()
-        _snd_tap.play()
+def _pool_play(pool, key):
+    if not pool:
+        return
+    idx = _pool_idx[key] % len(pool)
+    _pool_idx[key] = idx + 1
+    snd = pool[idx]
+    # Do NOT call stop() — just play() on the next idle instance in the pool.
+    # This avoids the Android stop() latency that causes the UI stall.
+    try:
+        snd.play()
+    except Exception:
+        pass
 
 
-def play_startpause():
-    if _snd_startpause:
-        _snd_startpause.stop()
-        _snd_startpause.play()
+def play_tap():        _pool_play(_pool_tap,   'tap')
+def play_startpause(): _pool_play(_pool_click, 'click')
 
 
 def play_alarm():
-    if _snd_alarm:
-        _snd_alarm.stop()
-        _snd_alarm.play()
+    if _pool_alarm:
+        try:
+            _pool_alarm[0].stop()
+            _pool_alarm[0].play()
+        except Exception:
+            pass
 
 
 # ── Vehicle icon drawing ─────────────────────────────────────────────────────
@@ -596,9 +612,10 @@ class SquareGridCluster(GridLayout):
         self._filler_rect.size = w.size
 
     def _tap(self, key):
-        haptic_tap()
-        play_tap()
+        # Increment counter immediately so the UI feels instant,
+        # then defer sound + haptic to the next frame to avoid blocking redraw.
         self.on_tap(key)
+        Clock.schedule_once(lambda dt: (haptic_tap(), play_tap()), 0)
 
 
 # ── Summary chip ──────────────────────────────────────────────────────────────
@@ -641,9 +658,8 @@ class JunctionSummary(BoxLayout):
             self.counts[key] -= 1
             self._refresh(key)
             self.chips[key][0].flash()
-            haptic_tap()
-            play_tap()
             self.on_minus()
+            Clock.schedule_once(lambda dt: (haptic_tap(), play_tap()), 0)
 
     def _refresh(self, key):
         btn, short = self.chips[key]
