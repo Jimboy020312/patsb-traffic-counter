@@ -49,6 +49,7 @@ TIMER_H = 130
 # ── Haptic feedback ──────────────────────────────────────────────────────────
 _haptic_flash_ev = None
 _vibrator = None
+_VibrationEffect = None   # cached JNI class — looked up once at init
 
 
 def _pc_haptic_flash():
@@ -61,36 +62,45 @@ def _pc_haptic_flash():
 
 
 def _init_haptic():
-    global _vibrator
+    global _vibrator, _VibrationEffect
     try:
         from jnius import autoclass
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
         Context = autoclass('android.content.Context')
         _vibrator = PythonActivity.mActivity.getSystemService(
             Context.VIBRATOR_SERVICE)
+        try:
+            _VibrationEffect = autoclass('android.os.VibrationEffect')
+        except Exception:
+            _VibrationEffect = None
+        print("HAPTIC init OK, VibrationEffect=%s" % _VibrationEffect)
     except Exception as e:
         print("HAPTIC _init_haptic failed:", e)
+
+
+def _do_haptic():
+    """Run on background thread — no JNI class lookups, just the vibrate call."""
+    if _vibrator is None:
+        return
+    try:
+        if _VibrationEffect is not None:
+            _vibrator.vibrate(
+                _VibrationEffect.createOneShot(
+                    30, _VibrationEffect.DEFAULT_AMPLITUDE))
+        else:
+            _vibrator.vibrate(30)
+    except Exception as e:
+        print("HAPTIC vibrate failed:", e)
 
 
 def haptic_tap():
     if platform != 'android':
         _pc_haptic_flash()
         return
-    global _vibrator
-    if _vibrator is None:
-        _init_haptic()
     if _vibrator is None:
         return
-    try:
-        from jnius import autoclass
-        VibrationEffect = autoclass('android.os.VibrationEffect')
-        _vibrator.vibrate(
-            VibrationEffect.createOneShot(30, VibrationEffect.DEFAULT_AMPLITUDE))
-    except Exception:
-        try:
-            _vibrator.vibrate(30)
-        except Exception as e:
-            print("HAPTIC vibrate failed:", e)
+    import threading
+    threading.Thread(target=_do_haptic, daemon=True).start()
 
 
 # ── Sound effects ─────────────────────────────────────────────────────────────
@@ -498,6 +508,13 @@ class SquareVehicleButton(Button):
         self.circle_color = circle_color
         self.label_text = label_text
         self._pressed = False
+        # cached bg colors — populated by first _redraw()
+        cr = circle_color
+        self._col_normal = (None, cr)
+        self._col_press = ((1, 1, 1, 0.9),
+                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r = self.CORNER_RADIUS
+        self._ring = 6
         self.bind(pos=self._redraw, size=self._redraw)
 
         self._img = None
@@ -514,42 +531,60 @@ class SquareVehicleButton(Button):
         self._redraw()
 
     def _redraw(self, *a):
-        self.canvas.before.clear()
+        """Full redraw — called on layout changes only."""
         w, h = self.size
         r = self.CORNER_RADIUS
         cr = self.circle_color
-        with self.canvas.before:
-            if self._pressed:
-                ring = 6
-                Color(1, 1, 1, 0.9)
-                RoundedRectangle(pos=(self.x-ring, self.y-ring),
-                                 size=(w+ring*2, h+ring*2), radius=[r+ring])
-                Color(cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3])
-            else:
-                Color(*cr)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[r])
         lbl_h = 24
         pad = 6
+        # layout children
         self._lbl.size = (w, lbl_h)
-        self._lbl.pos = (self.x, self.y+pad)
+        self._lbl.pos = (self.x, self.y + pad)
         self._lbl.text_size = self._lbl.size
-        icon_zone_h = h - lbl_h - pad*2
+        icon_zone_h = h - lbl_h - pad * 2
         icon_zone_y = self.y + lbl_h + pad
         if self._img:
             icon_sz = min(w, icon_zone_h) * 0.82
             self._img.size = (icon_sz, icon_sz)
-            self._img.pos = (self.x+(w-icon_sz)/2,
-                             icon_zone_y+(icon_zone_h-icon_sz)/2)
+            self._img.pos = (self.x + (w - icon_sz) / 2,
+                             icon_zone_y + (icon_zone_h - icon_sz) / 2)
         else:
             self.canvas.after.clear()
-            cx = self.x + w/2
-            cy = icon_zone_y + icon_zone_h/2
+            cx = self.x + w / 2
+            cy = icon_zone_y + icon_zone_h / 2
             sz = min(w, icon_zone_h) * 0.92
             with self.canvas.after:
                 draw_icon(self.canvas.after, self.key, cx, cy, sz)
+        # store normal/dim colors for fast press recolor
+        self._col_normal = (None, cr)
+        self._col_press = ((1, 1, 1, 0.9),
+                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r = r
+        self._ring = 6
+        self._redraw_bg()
 
-    def on_press(self):   self._pressed = True;  self._redraw()
-    def on_release(self): self._pressed = False; self._redraw()
+    def _redraw_bg(self):
+        """Cheap background-only redraw — called on press/release."""
+        self.canvas.before.clear()
+        w, h = self.size
+        with self.canvas.before:
+            if self._pressed:
+                Color(*self._col_press[0])
+                RoundedRectangle(pos=(self.x - self._ring, self.y - self._ring),
+                                 size=(w + self._ring*2, h + self._ring*2),
+                                 radius=[self._r + self._ring])
+                Color(*self._col_press[1])
+            else:
+                Color(*self._col_normal[1])
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[self._r])
+
+    def on_press(self):
+        self._pressed = True
+        self._redraw_bg()
+
+    def on_release(self):
+        self._pressed = False
+        self._redraw_bg()
 
 
 # ── Grid cluster ──────────────────────────────────────────────────────────────
@@ -613,9 +648,12 @@ class SquareGridCluster(GridLayout):
 
     def _tap(self, key):
         # Increment counter immediately so the UI feels instant,
-        # then defer sound + haptic to the next frame to avoid blocking redraw.
+        # then fire sound + haptic on a background thread so the main
+        # thread / redraw is never blocked.
         self.on_tap(key)
-        Clock.schedule_once(lambda dt: (haptic_tap(), play_tap()), 0)
+        import threading
+        threading.Thread(target=lambda: (
+            haptic_tap(), play_tap()), daemon=True).start()
 
 
 # ── Summary chip ──────────────────────────────────────────────────────────────
@@ -659,7 +697,9 @@ class JunctionSummary(BoxLayout):
             self._refresh(key)
             self.chips[key][0].flash()
             self.on_minus()
-            Clock.schedule_once(lambda dt: (haptic_tap(), play_tap()), 0)
+            import threading
+            threading.Thread(target=lambda: (
+                haptic_tap(), play_tap()), daemon=True).start()
 
     def _refresh(self, key):
         btn, short = self.chips[key]
@@ -1022,12 +1062,25 @@ class RootLayout(FloatLayout):
     def _j2_tap(self, key): self.j2_summary.increment(key); self._save()
 
     def _save(self, *a):
-        try:
-            with open(SAVE_FILE, 'w') as f:
-                json.dump({'j1': self.j1_summary.get_counts(),
-                           'j2': self.j2_summary.get_counts()}, f)
-        except Exception as e:
-            print("Save error:", e)
+        # Debounce: cancel any pending save and reschedule.
+        # The actual write is deferred 0.5 s and runs on a background thread
+        # so the main/UI thread is never blocked by file I/O.
+        if hasattr(self, '_save_ev') and self._save_ev:
+            self._save_ev.cancel()
+        self._save_ev = Clock.schedule_once(self._save_bg, 0.5)
+
+    def _save_bg(self, dt=None):
+        import threading
+        data = {'j1': self.j1_summary.get_counts(),
+                'j2': self.j2_summary.get_counts()}
+
+        def _write():
+            try:
+                with open(SAVE_FILE, 'w') as f:
+                    json.dump(data, f)
+            except Exception as e:
+                print("Save error:", e)
+        threading.Thread(target=_write, daemon=True).start()
 
     def _load(self):
         try:
@@ -1101,6 +1154,12 @@ class TrafficCounterApp(App):
         if platform == 'android':
             _init_haptic()
             Window.update_viewport()
+
+    def on_stop(self):
+        # Flush any pending debounced save immediately on app exit.
+        root = self._root.children[0] if self._root.children else None
+        if isinstance(root, RootLayout):
+            root._save_bg()
 
 
 if __name__ == '__main__':
