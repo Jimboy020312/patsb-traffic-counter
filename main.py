@@ -452,35 +452,42 @@ class StartPauseButton(IconButton):
         self._img.pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
 
 
-# ── UNDO button ───────────────────────────────────────────────────────────────
-class UndoButton(IconButton):
-    """Dark icon button that shows assets/undo.png centred inside.
-    Call set_available(True/False) to enable or dim it."""
-
-    BG_DISABLED = (0.10, 0.11, 0.15, 1)   # same as normal BG but icon dimmed
+# ── UNDO / REDO toggle button ─────────────────────────────────────────────────
+class UndoRedoButton(IconButton):
+    """Single dark icon button that shows assets/undo.png or assets/redo.png
+    depending on which action currently makes sense.
+    Call set_mode('undo' | 'redo' | None) — None disables/dims the button."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._available = False   # disabled until a Reset All is performed
-        icon_path = os.path.join(_asset_dir(), 'undo.png')
+        self._mode = None   # 'undo' | 'redo' | None (disabled)
+        self._src_undo = os.path.join(_asset_dir(), 'undo.png')
+        self._src_redo = os.path.join(_asset_dir(), 'redo.png')
+        for path, label in ((self._src_undo, 'undo'), (self._src_redo, 'redo')):
+            if not os.path.exists(path):
+                print('ICON', label, path,
+                      'MISSING — place a 256x256 RGBA PNG there')
         self._img = None
-        if os.path.exists(icon_path):
-            self._img = KivyImage(source=icon_path, allow_stretch=True,
+        src = self._src_undo if os.path.exists(self._src_undo) else None
+        if src:
+            self._img = KivyImage(source=src, allow_stretch=True,
                                   keep_ratio=True, size_hint=(None, None))
             self.add_widget(self._img)
-        else:
-            print('ICON undo', icon_path,
-                  'MISSING — place a 256x256 RGBA PNG there')
-        self._update_opacity()
+        self._update_visual()
 
-    def set_available(self, val):
-        self._available = val
-        self._update_opacity()
+    def set_mode(self, mode):
+        """mode: 'undo' to show/enable the undo icon, 'redo' to show/enable
+        the redo icon, or None to disable and dim the button."""
+        self._mode = mode
+        self._update_visual()
 
-    def _update_opacity(self):
-        # Dim the icon and tint the background when unavailable
-        if self._img:
-            self._img.opacity = 1.0 if self._available else 0.25
+    def _update_visual(self):
+        # Swap icon source and dim it when there is nothing to do
+        if self._img is not None:
+            new_src = self._src_redo if self._mode == 'redo' else self._src_undo
+            if os.path.exists(new_src):
+                self._img.source = new_src
+            self._img.opacity = 1.0 if self._mode else 0.25
         self._redraw()
 
     def _draw_icon(self):
@@ -539,6 +546,8 @@ class SquareVehicleButton(Button):
         self.circle_color = circle_color
         self.label_text = label_text
         self._pressed = False
+        self._touch = None
+        self._timeout_ev = None
         # cached bg colors — populated by first _redraw()
         cr = circle_color
         self._col_normal = (None, cr)
@@ -609,23 +618,66 @@ class SquareVehicleButton(Button):
                 Color(*self._col_normal[1])
             RoundedRectangle(pos=self.pos, size=self.size, radius=[self._r])
 
+    # Safety net: occasionally a touch is cancelled by the OS (e.g. a brief
+    # accidental graze, or Android intercepting it for a system gesture)
+    # and Kivy never delivers a matching on_touch_up. Without a timeout the
+    # button would stay rendered as "pressed" forever, only clearing on the
+    # next unrelated tap. This auto-releases the look (without counting a
+    # tap) if no touch_up arrives within PRESS_TIMEOUT seconds.
+    PRESS_TIMEOUT = 1.0
+
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
+            # Defensive: if a previous touch was somehow never released
+            # (the exact stuck-press scenario this fixes), clear it first
+            # so this fresh press starts from a clean state.
+            if self._pressed:
+                self._clear_press()
             touch.grab(self)
+            self._touch = touch
             self._pressed = True
             self._redraw_bg()
+            self._arm_timeout()
             return True
         return super().on_touch_down(touch)
 
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             touch.ungrab(self)
+            self._cancel_timeout()
+            self._touch = None
             self._pressed = False
             self._redraw_bg()
             if self.collide_point(*touch.pos):
                 self.dispatch('on_release')
             return True
         return super().on_touch_up(touch)
+
+    def _arm_timeout(self):
+        self._cancel_timeout()
+        self._timeout_ev = Clock.schedule_once(
+            self._force_release, self.PRESS_TIMEOUT)
+
+    def _cancel_timeout(self):
+        if getattr(self, '_timeout_ev', None):
+            self._timeout_ev.cancel()
+            self._timeout_ev = None
+
+    def _force_release(self, dt):
+        # The grabbed touch never sent on_touch_up — release it ourselves.
+        # This does NOT count as a tap, it only clears the stuck visual.
+        self._clear_press()
+
+    def _clear_press(self):
+        self._cancel_timeout()
+        if self._touch is not None:
+            try:
+                self._touch.ungrab(self)
+            except Exception:
+                pass
+        self._touch = None
+        self._pressed = False
+        self._redraw_bg()
 
     def on_press(self):
         pass  # handled by on_touch_down
@@ -637,7 +689,7 @@ class SquareVehicleButton(Button):
 
 # ── Grid cluster ──────────────────────────────────────────────────────────────
 GRID_KEYS_LEFT = [
-    ["LRY",  None],      # None → UNDO button
+    ["LRY",  None],      # None → UNDO/REDO toggle button
     ["MOTO", "CAR"],
     ["LLRY", "BUS"],
 ]
@@ -651,13 +703,15 @@ GRID_KEYS_RIGHT = [
 class SquareGridCluster(GridLayout):
     SEP = 3
 
-    def __init__(self, on_tap, corner, timer_widget=None, on_undo=None, **kwargs):
-        super().__init__(cols=2, rows=3, spacing=self.SEP, padding=0, **kwargs)
+    def __init__(self, on_tap, corner, timer_widget=None, on_undo=None,
+                on_redo=None, **kwargs):
+        grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
+        super().__init__(cols=len(grid_keys[0]), rows=len(grid_keys),
+                         spacing=self.SEP, padding=0, **kwargs)
         self.on_tap = on_tap
         self.corner = corner
         self._buttons = {}
 
-        grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         for row in grid_keys:
             for key in row:
                 if key is None:
@@ -667,23 +721,20 @@ class SquareGridCluster(GridLayout):
                             play_startpause(), timer_widget._toggle()))
                         timer_widget._ext_btn_ss = sp
                         self.add_widget(sp)
-                    elif corner == 'left' and on_undo is not None:
-                        ub = UndoButton(size_hint=(1, 1))
-                        # Undo uses the same soft-click sound as Start/Pause
+                    elif corner == 'left' and (on_undo is not None or on_redo is not None):
+                        ub = UndoRedoButton(size_hint=(1, 1))
+                        # Same release fires Undo or Redo depending on the
+                        # button's current mode; soft-click sound shared
+                        # with Start/Pause.
                         ub.bind(on_release=lambda b: (
-                            haptic_tap(), play_startpause(), on_undo())
-                            if ub._available else None)
-                        self._undo_btn = ub
+                            haptic_tap(), play_startpause(),
+                            on_undo() if ub._mode == 'undo'
+                            else (on_redo() if ub._mode == 'redo' else None))
+                            if ub._mode else None)
+                        self._undo_redo_btn = ub
                         self.add_widget(ub)
                     else:
-                        filler = BoxLayout()
-                        with filler.canvas.before:
-                            Color(0.13, 0.14, 0.18, 1)
-                            self._filler_rect = Rectangle(
-                                pos=filler.pos, size=filler.size)
-                        filler.bind(pos=self._upd_filler,
-                                    size=self._upd_filler)
-                        self.add_widget(filler)
+                        self.add_widget(self._make_filler())
                 else:
                     short, color = VEHICLES[key]
                     btn = SquareVehicleButton(key=key, circle_color=color,
@@ -692,9 +743,18 @@ class SquareGridCluster(GridLayout):
                     self._buttons[key] = btn
                     self.add_widget(btn)
 
-    def _upd_filler(self, w, *a):
-        self._filler_rect.pos = w.pos
-        self._filler_rect.size = w.size
+    def _make_filler(self):
+        filler = BoxLayout()
+        with filler.canvas.before:
+            Color(0.13, 0.14, 0.18, 1)
+            rect = Rectangle(pos=filler.pos, size=filler.size)
+        filler._rect = rect
+
+        def _upd(w, *a):
+            w._rect.pos = w.pos
+            w._rect.size = w.size
+        filler.bind(pos=_upd, size=_upd)
+        return filler
 
     def _tap(self, key):
         # Increment counter immediately so the UI feels instant,
@@ -1038,6 +1098,7 @@ class RootLayout(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._undo_snapshot = None
+        self._redo_snapshot = None
 
         top = BoxLayout(size_hint=(1, None), height=TOP_H,
                         pos_hint={'x': 0, 'top': 1},
@@ -1062,7 +1123,7 @@ class RootLayout(FloatLayout):
 
         self.j1_cluster = SquareGridCluster(
             on_tap=self._j1_tap, corner='left',
-            on_undo=self._do_undo,
+            on_undo=self._do_undo, on_redo=self._do_redo,
             size_hint=(None, None), pos_hint={'x': 0, 'y': 0})
 
         self.j2_cluster = SquareGridCluster(
@@ -1168,30 +1229,53 @@ class RootLayout(FloatLayout):
         popup.open()
 
     def _do_reset(self):
+        # Starting a brand-new action clears any pending redo history.
         self._undo_snapshot = (
             self.j1_summary.get_counts(),
             self.j2_summary.get_counts(),
         )
+        self._redo_snapshot = None
         self.j1_summary.reset()
         self.j2_summary.reset()
         self.timer.stop_alert()
         self.timer.reset_to_default()
         self._save()
-        self._set_undo_available(True)
+        self._set_undo_redo_mode('undo')
 
     def _do_undo(self):
         if self._undo_snapshot is None:
             return
+        # Stash the current (post-reset) state so Redo can re-apply it.
+        self._redo_snapshot = (
+            self.j1_summary.get_counts(),
+            self.j2_summary.get_counts(),
+        )
         j1_snap, j2_snap = self._undo_snapshot
         self.j1_summary.set_counts(j1_snap)
         self.j2_summary.set_counts(j2_snap)
         self._undo_snapshot = None
         self._save()
-        self._set_undo_available(False)
+        self._set_undo_redo_mode('redo')
 
-    def _set_undo_available(self, val):
-        if hasattr(self.j1_cluster, '_undo_btn'):
-            self.j1_cluster._undo_btn.set_available(val)
+    def _do_redo(self):
+        if self._redo_snapshot is None:
+            return
+        # Stash the current (undone) state so Undo can restore it again.
+        self._undo_snapshot = (
+            self.j1_summary.get_counts(),
+            self.j2_summary.get_counts(),
+        )
+        j1_snap, j2_snap = self._redo_snapshot
+        self.j1_summary.set_counts(j1_snap)
+        self.j2_summary.set_counts(j2_snap)
+        self._redo_snapshot = None
+        self._save()
+        self._set_undo_redo_mode('undo')
+
+    def _set_undo_redo_mode(self, mode):
+        if hasattr(self.j1_cluster, '_undo_redo_btn'):
+            self.j1_cluster._undo_redo_btn.set_mode(mode)
+
 
 
 class TrafficCounterApp(App):
