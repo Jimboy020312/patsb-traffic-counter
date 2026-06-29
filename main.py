@@ -467,12 +467,24 @@ class UndoRedoButton(IconButton):
             if not os.path.exists(path):
                 print('ICON', label, path,
                       'MISSING — place a 256x256 RGBA PNG there')
-        self._img = None
-        src = self._src_undo if os.path.exists(self._src_undo) else None
-        if src:
-            self._img = KivyImage(source=src, allow_stretch=True,
-                                  keep_ratio=True, size_hint=(None, None))
-            self.add_widget(self._img)
+        # Pre-load BOTH icons once at construction time and just toggle which
+        # one is visible. Swapping an Image widget's `source` at runtime
+        # (e.g. undo.png -> redo.png) is reliable on desktop GL but has
+        # been flaky on some Android GPU/driver combos — the texture
+        # reload silently fails to show. Loading both up front and only
+        # changing opacity avoids that runtime-reload path entirely.
+        self._img_undo = None
+        self._img_redo = None
+        if os.path.exists(self._src_undo):
+            self._img_undo = KivyImage(source=self._src_undo, allow_stretch=True,
+                                       keep_ratio=True, size_hint=(None, None),
+                                       opacity=0.25)
+            self.add_widget(self._img_undo)
+        if os.path.exists(self._src_redo):
+            self._img_redo = KivyImage(source=self._src_redo, allow_stretch=True,
+                                       keep_ratio=True, size_hint=(None, None),
+                                       opacity=0)
+            self.add_widget(self._img_redo)
         self._update_visual()
 
     def set_mode(self, mode):
@@ -482,21 +494,52 @@ class UndoRedoButton(IconButton):
         self._update_visual()
 
     def _update_visual(self):
-        # Swap icon source and dim it when there is nothing to do
-        if self._img is not None:
-            new_src = self._src_redo if self._mode == 'redo' else self._src_undo
-            if os.path.exists(new_src):
-                self._img.source = new_src
-            self._img.opacity = 1.0 if self._mode else 0.25
+        # Toggle opacity on the two pre-loaded images — never touch .source
+        if self._img_undo is not None:
+            self._img_undo.opacity = (
+                0 if self._mode == 'redo' else (1.0 if self._mode else 0.25))
+        if self._img_redo is not None:
+            self._img_redo.opacity = 1.0 if self._mode == 'redo' else 0
         self._redraw()
 
     def _draw_icon(self):
-        if self._img is None:
-            return
         w, h = self.size
         sz = min(w, h) * 0.65
-        self._img.size = (sz, sz)
-        self._img.pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
+        pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
+        if self._img_undo is not None:
+            self._img_undo.size = (sz, sz)
+            self._img_undo.pos = pos
+        if self._img_redo is not None:
+            self._img_redo.size = (sz, sz)
+            self._img_redo.pos = pos
+        if self._img_undo is not None or self._img_redo is not None:
+            return
+        # Fallback vector icon — used only if undo.png/redo.png can't be
+        # found (e.g. present on the dev machine but not yet bundled into
+        # an Android build). Keeps the button from rendering blank.
+        self.canvas.after.clear()
+        if w < 4 or h < 4:
+            return
+        cx, cy = self.x + w / 2, self.y + h / 2
+        r = min(w, h) * 0.22
+        lw = max(2.0, min(w, h) * 0.05)
+        alpha = 0.95 if self._mode else 0.25
+        # redo mirrors undo horizontally so the two are visually distinct
+        flip = -1 if self._mode == 'redo' else 1
+        start_deg, tip_deg = 485, 215   # ~270° sweep, arrowhead at tip_deg
+        with self.canvas.after:
+            Color(1, 1, 1, alpha)
+            Line(circle=(cx, cy, r, tip_deg, start_deg),
+                 width=lw, cap='round')
+            ang = math.radians(tip_deg)
+            tipx = cx + flip * r * math.cos(ang)
+            tipy = cy + r * math.sin(ang)
+            head = r * 0.95
+            Triangle(points=[
+                tipx - flip*head*0.55, tipy + head*0.35,
+                tipx - flip*head*0.05, tipy - head*0.55,
+                tipx + flip*head*0.55, tipy + head*0.15,
+            ])
 
 
 # ── Asset paths ───────────────────────────────────────────────────────────────
@@ -704,7 +747,7 @@ class SquareGridCluster(GridLayout):
     SEP = 3
 
     def __init__(self, on_tap, corner, timer_widget=None, on_undo=None,
-                on_redo=None, **kwargs):
+                 on_redo=None, **kwargs):
         grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         super().__init__(cols=len(grid_keys[0]), rows=len(grid_keys),
                          spacing=self.SEP, padding=0, **kwargs)
@@ -1275,7 +1318,6 @@ class RootLayout(FloatLayout):
     def _set_undo_redo_mode(self, mode):
         if hasattr(self.j1_cluster, '_undo_redo_btn'):
             self.j1_cluster._undo_redo_btn.set_mode(mode)
-
 
 
 class TrafficCounterApp(App):
