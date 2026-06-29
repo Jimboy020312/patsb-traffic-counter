@@ -12,7 +12,7 @@ version = 1.0
 # whether to update in-place or reject the install. Never reuse a number.
 android.numeric_version = 1
 
-requirements = python3,kivy,android
+requirements = python3,kivy,android,pillow
 
 orientation = landscape
 
