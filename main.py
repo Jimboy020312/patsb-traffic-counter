@@ -542,7 +542,89 @@ class UndoRedoButton(IconButton):
             ])
 
 
-# ── Asset paths ───────────────────────────────────────────────────────────────
+# ── LOCK / UNLOCK toggle button ───────────────────────────────────────────────
+class LockButton(IconButton):
+    """Icon button below the timer that shows assets/lock.png when unlocked
+    and assets/unlock.png when locked. Pre-loads both textures at startup so
+    there is never a runtime texture-reload (the same fix applied to Undo/Redo).
+    Call set_locked(True/False) to switch state."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._is_locked = False
+        self._src_lock = os.path.join(_asset_dir(), 'lock.png')
+        self._src_unlock = os.path.join(_asset_dir(), 'unlock.png')
+        for path, label in ((self._src_lock, 'lock'), (self._src_unlock, 'unlock')):
+            if not os.path.exists(path):
+                print('ICON', label, path,
+                      'MISSING — place a 256x256 RGBA PNG there')
+        self._img_lock = None
+        self._img_unlock = None
+        if os.path.exists(self._src_lock):
+            self._img_lock = KivyImage(source=self._src_lock,
+                                       allow_stretch=True, keep_ratio=True,
+                                       size_hint=(None, None), opacity=1.0)
+            self.add_widget(self._img_lock)
+        if os.path.exists(self._src_unlock):
+            self._img_unlock = KivyImage(source=self._src_unlock,
+                                         allow_stretch=True, keep_ratio=True,
+                                         size_hint=(None, None), opacity=0)
+            self.add_widget(self._img_unlock)
+        self._update_visual()
+
+    def set_locked(self, locked):
+        self._is_locked = locked
+        self._update_visual()
+
+    # Accent colours: blue when unlocked (tap to lock), amber when locked
+    _COL_UNLOCKED = (0.20, 0.45, 0.65, 1)
+    _COL_LOCKED = (0.65, 0.35, 0.10, 1)
+
+    def _update_visual(self):
+        # Show lock icon when unlocked, unlock icon when locked
+        if self._img_lock:
+            self._img_lock.opacity = 0 if self._is_locked else 1.0
+        if self._img_unlock:
+            self._img_unlock.opacity = 1.0 if self._is_locked else 0
+        self.BG = self._COL_LOCKED if self._is_locked else self._COL_UNLOCKED
+        self._redraw()
+
+    def _draw_icon(self):
+        w, h = self.size
+        sz = min(w, h) * 0.60
+        pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
+        if self._img_lock:
+            self._img_lock.size = (sz, sz)
+            self._img_lock.pos = pos
+        if self._img_unlock:
+            self._img_unlock.size = (sz, sz)
+            self._img_unlock.pos = pos
+        if self._img_lock is not None or self._img_unlock is not None:
+            return
+        # Fallback: draw a simple padlock in canvas if both PNGs are missing
+        self.canvas.after.clear()
+        if w < 4 or h < 4:
+            return
+        cx, cy = self.x + w / 2, self.y + h / 2
+        s = min(w, h) * 0.0032
+        lw = max(1.8, min(w, h) * 0.045)
+        with self.canvas.after:
+            Color(1, 1, 1, 0.95)
+            # shackle arc (open when unlocked, closed when locked)
+            bw, bh = 28*s, 22*s
+            if self._is_locked:
+                Line(circle=(cx, cy + 10*s, 14*s, 0, 180), width=lw, cap='round')
+            else:
+                Line(circle=(cx + 14*s, cy + 10*s, 14*s, 60, 180),
+                     width=lw, cap='round')
+            # body
+            Line(rounded_rectangle=(cx - bw/2, cy - 18*s, bw, 26*s, 4*s),
+                 width=lw)
+            # keyhole
+            Ellipse(pos=(cx - 5*s, cy - 5*s), size=(10*s, 10*s))
+            Line(points=[cx, cy - 5*s, cx, cy - 14*s], width=lw*0.8)
+
+
 _ICON_FILES = {
     'CAR':  'car.png',  'MOTO': 'moto.png',
     'LRY':  'lry.png',  'LLRY': 'llry.png',
@@ -670,6 +752,8 @@ class SquareVehicleButton(Button):
     PRESS_TIMEOUT = 1.0
 
     def on_touch_down(self, touch):
+        if self.disabled:
+            return False
         if self.collide_point(*touch.pos):
             # Defensive: if a previous touch was somehow never released
             # (the exact stuck-press scenario this fixes), clear it first
@@ -747,13 +831,14 @@ class SquareGridCluster(GridLayout):
     SEP = 3
 
     def __init__(self, on_tap, corner, timer_widget=None, on_undo=None,
-                 on_redo=None, **kwargs):
+                 on_redo=None, is_locked=None, **kwargs):
         grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         super().__init__(cols=len(grid_keys[0]), rows=len(grid_keys),
                          spacing=self.SEP, padding=0, **kwargs)
         self.on_tap = on_tap
         self.corner = corner
         self._buttons = {}
+        self._is_locked = is_locked or (lambda: False)
 
         for row in grid_keys:
             for key in row:
@@ -761,19 +846,18 @@ class SquareGridCluster(GridLayout):
                     if corner == 'right' and timer_widget is not None:
                         sp = StartPauseButton(size_hint=(1, 1))
                         sp.bind(on_release=lambda b: (
-                            play_startpause(), timer_widget._toggle()))
+                            None if self._is_locked() else (
+                                play_startpause(), timer_widget._toggle())))
                         timer_widget._ext_btn_ss = sp
                         self.add_widget(sp)
                     elif corner == 'left' and (on_undo is not None or on_redo is not None):
                         ub = UndoRedoButton(size_hint=(1, 1))
-                        # Same release fires Undo or Redo depending on the
-                        # button's current mode; soft-click sound shared
-                        # with Start/Pause.
                         ub.bind(on_release=lambda b: (
-                            haptic_tap(), play_startpause(),
-                            on_undo() if ub._mode == 'undo'
-                            else (on_redo() if ub._mode == 'redo' else None))
-                            if ub._mode else None)
+                            None if self._is_locked() else (
+                                haptic_tap(), play_startpause(),
+                                on_undo() if ub._mode == 'undo'
+                                else (on_redo() if ub._mode == 'redo' else None)))
+                                if ub._mode else None)
                         self._undo_redo_btn = ub
                         self.add_widget(ub)
                     else:
@@ -803,7 +887,10 @@ class SquareGridCluster(GridLayout):
         # Increment counter immediately so the UI feels instant,
         # then fire sound + haptic on a background thread so the main
         # thread / redraw is never blocked.
+        # Both are suppressed when locked.
         self.on_tap(key)
+        if self._is_locked():
+            return
         import threading
         threading.Thread(target=lambda: (
             haptic_tap(), play_tap()), daemon=True).start()
@@ -827,12 +914,13 @@ class SummaryChip(Button):
 
 
 class JunctionSummary(BoxLayout):
-    def __init__(self, on_minus, order=None, **kwargs):
+    def __init__(self, on_minus, order=None, is_locked=None, **kwargs):
         kwargs.setdefault('orientation', 'horizontal')
         kwargs.setdefault('spacing', 6)
         kwargs.setdefault('padding', [8, 6, 8, 6])
         super().__init__(**kwargs)
         self.on_minus = on_minus
+        self.is_locked = is_locked or (lambda: False)
         self.counts = {k: 0 for k in VEHICLES}
         self.chips = {}
         for key in (order or SUMMARY_ORDER_LEFT):
@@ -845,6 +933,8 @@ class JunctionSummary(BoxLayout):
             self.add_widget(btn)
 
     def _minus(self, key):
+        if self.is_locked():
+            return
         if self.counts[key] > 0:
             self.counts[key] -= 1
             self._refresh(key)
@@ -896,13 +986,24 @@ class TimerWidget(BoxLayout):
 
         row = BoxLayout(orientation='horizontal', size_hint=(1, None),
                         height=46, spacing=6, padding=[4, 0, 4, 0])
-        btn_set = self._mk("SET",   (0.25, 0.35, 0.60, 1))
-        btn_rst = self._mk("RESET", (0.55, 0.25, 0.25, 1))
-        btn_set.bind(on_release=self._open_set)
-        btn_rst.bind(on_release=self._reset_timer)
-        row.add_widget(btn_set)
-        row.add_widget(btn_rst)
+        self._btn_set = self._mk("SET",   (0.25, 0.35, 0.60, 1))
+        self._btn_rst = self._mk("RESET", (0.55, 0.25, 0.25, 1))
+        self._btn_set.bind(on_release=self._open_set)
+        self._btn_rst.bind(on_release=self._reset_timer)
+        row.add_widget(self._btn_set)
+        row.add_widget(self._btn_rst)
         self.add_widget(row)
+
+    def set_locked(self, locked):
+        """Dim and disable the SET/RESET buttons and the play/pause button."""
+        alpha = 0.25 if locked else 1.0
+        self._btn_set.opacity = alpha
+        self._btn_rst.opacity = alpha
+        self._btn_set.disabled = locked
+        self._btn_rst.disabled = locked
+        if self._ext_btn_ss:
+            self._ext_btn_ss.opacity = alpha
+            self._ext_btn_ss.disabled = locked
 
     def _mk(self, t, bg):
         return Button(text=t, font_size=15, bold=True, color=(1, 1, 1, 1),
@@ -1142,20 +1243,23 @@ class RootLayout(FloatLayout):
         super().__init__(**kwargs)
         self._undo_snapshot = None
         self._redo_snapshot = None
+        self._locked = False
 
         top = BoxLayout(size_hint=(1, None), height=TOP_H,
                         pos_hint={'x': 0, 'top': 1},
                         spacing=6, padding=[6, 6, 6, 6])
-        self.j1_summary = JunctionSummary(on_minus=self._save,
+        self.j1_summary = JunctionSummary(on_minus=self._on_minus,
                                           order=SUMMARY_ORDER_LEFT,
+                                          is_locked=lambda: self._locked,
                                           size_hint=(0.42, 1))
         self.reset_btn = Button(text="RESET ALL", font_size=16, bold=True,
                                 color=(1, 1, 1, 1), background_normal='',
                                 background_color=(0.75, 0.20, 0.20, 1),
                                 size_hint=(0.16, 1))
         self.reset_btn.bind(on_release=self._confirm_reset)
-        self.j2_summary = JunctionSummary(on_minus=self._save,
+        self.j2_summary = JunctionSummary(on_minus=self._on_minus,
                                           order=SUMMARY_ORDER_RIGHT,
+                                          is_locked=lambda: self._locked,
                                           size_hint=(0.42, 1))
         top.add_widget(self.j1_summary)
         top.add_widget(self.reset_btn)
@@ -1164,23 +1268,33 @@ class RootLayout(FloatLayout):
 
         self.timer = TimerWidget(size_hint=(1, 1))
 
+        # Lock button lives below the timer in the centre column.
+        # It is the ONLY thing that stays tappable when locked.
+        LOCK_BTN_H = 48
+        self.lock_btn = LockButton(size_hint=(1, None), height=LOCK_BTN_H)
+        self.lock_btn.bind(on_release=self._toggle_lock)
+        self._lock_btn_h = LOCK_BTN_H
+
         self.j1_cluster = SquareGridCluster(
             on_tap=self._j1_tap, corner='left',
             on_undo=self._do_undo, on_redo=self._do_redo,
+            is_locked=lambda: self._locked,
             size_hint=(None, None), pos_hint={'x': 0, 'y': 0})
 
         self.j2_cluster = SquareGridCluster(
             on_tap=self._j2_tap, corner='right',
             timer_widget=self.timer,
+            is_locked=lambda: self._locked,
             size_hint=(None, None), pos_hint={'right': 1, 'y': 0})
 
         self.add_widget(self.j1_cluster)
         self.add_widget(self.j2_cluster)
 
-        self.timer_box = BoxLayout(orientation='vertical',
+        self.timer_box = BoxLayout(orientation='vertical', spacing=6,
                                    size_hint=(None, None),
                                    pos_hint={'center_x': 0.5})
         self.timer_box.add_widget(self.timer)
+        self.timer_box.add_widget(self.lock_btn)
         self.add_widget(self.timer_box)
 
         self.bind(size=self._layout)
@@ -1208,12 +1322,67 @@ class RootLayout(FloatLayout):
         self.j2_cluster.pos = (right_grid_x, 0)
 
         timer_w = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
-        timer_h = min(TIMER_H, cluster_h - 12)
-        self.timer_box.size = (timer_w, timer_h)
-        self.timer_box.pos = (W/2 - timer_w/2, (cluster_h - timer_h)/2)
+        total_box_h = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
+        timer_h = total_box_h - self._lock_btn_h - 6
+        self.timer_box.size = (timer_w, total_box_h)
+        self.timer_box.pos = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
 
-    def _j1_tap(self, key): self.j1_summary.increment(key); self._save()
-    def _j2_tap(self, key): self.j2_summary.increment(key); self._save()
+    def _j1_tap(self, key):
+        if self._locked:
+            return
+        self.j1_summary.increment(key)
+        self._save()
+
+    def _j2_tap(self, key):
+        if self._locked:
+            return
+        self.j2_summary.increment(key)
+        self._save()
+
+    def _on_minus(self):
+        """Proxy passed to JunctionSummary — honours the lock state.
+        JunctionSummary calls this after it has already decremented, so if
+        locked we put the count back and skip the save."""
+        # The actual guard lives in JunctionSummary._minus which checks
+        # _locked via the on_minus gate below — see _toggle_lock.
+        self._save()
+
+    def _toggle_lock(self, *a):
+        self._locked = not self._locked
+        self.lock_btn.set_locked(self._locked)
+        if self._locked:
+            # Auto-pause the timer — must be manually resumed after unlock
+            self.timer._pause()
+            self.reset_btn.disabled = True
+            self.reset_btn.opacity = 0.25
+            self.timer.set_locked(True)
+            if hasattr(self.j1_cluster, '_undo_redo_btn'):
+                self.j1_cluster._undo_redo_btn.disabled = True
+                self.j1_cluster._undo_redo_btn.opacity = 0.25
+            for summary in (self.j1_summary, self.j2_summary):
+                for btn, _ in summary.chips.values():
+                    btn.disabled = True
+                    btn.opacity = 0.35
+            for cluster in (self.j1_cluster, self.j2_cluster):
+                for btn in cluster._buttons.values():
+                    btn.disabled = True
+                    btn.opacity = 0.35
+        else:
+            # Unlock — timer stays paused, user must press play to resume
+            self.reset_btn.disabled = False
+            self.reset_btn.opacity = 1.0
+            self.timer.set_locked(False)
+            if hasattr(self.j1_cluster, '_undo_redo_btn'):
+                self.j1_cluster._undo_redo_btn.disabled = False
+                self.j1_cluster._undo_redo_btn.opacity = 1.0
+            for summary in (self.j1_summary, self.j2_summary):
+                for btn, _ in summary.chips.values():
+                    btn.disabled = False
+                    btn.opacity = 1.0
+            for cluster in (self.j1_cluster, self.j2_cluster):
+                for btn in cluster._buttons.values():
+                    btn.disabled = False
+                    btn.opacity = 1.0
 
     def _save(self, *a):
         # Debounce: cancel any pending save and reschedule.
