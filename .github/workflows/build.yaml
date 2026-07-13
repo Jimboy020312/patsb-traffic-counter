@@ -1,33 +1,26 @@
 name: Build PATSB Traffic Counter APK
-
 on:
   push:
     branches:
       - main
   workflow_dispatch:
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build-apk:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
@@ -38,46 +31,39 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             cmake libsqlite3-dev libpng-dev \
             build-essential ccache
-
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip setuptools
           pip install cython==0.29.33
           pip install buildozer==1.5.0
-
       - name: Set up Android SDK manually
         run: |
           SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
           mkdir -p $SDK_ROOT/cmdline-tools
           mkdir -p $SDK_ROOT/tools/bin
-
           # Download new cmdline-tools
           cd /tmp
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
           mv cmdline-tools $SDK_ROOT/cmdline-tools/latest
-
           # Accept licenses
           mkdir -p $SDK_ROOT/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK_ROOT/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> $SDK_ROOT/licenses/android-sdk-license
           echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK_ROOT/licenses/android-sdk-preview-license
           yes | $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_ROOT --licenses || true
-
           # Install required packages
           $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             --sdk_root=$SDK_ROOT \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-31"
-
           # Create legacy sdkmanager wrapper so Buildozer 1.5.0 finds it
           cat > $SDK_ROOT/tools/bin/sdkmanager << 'WRAPPER'
           #!/bin/bash
           exec $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"
           WRAPPER
           chmod +x $SDK_ROOT/tools/bin/sdkmanager
-
       - name: Cache Buildozer directory
         uses: actions/cache@v4
         with:
@@ -85,7 +71,6 @@ jobs:
           key: buildozer-${{ runner.os }}-v6-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
             buildozer-${{ runner.os }}-v6-
-
       - name: Verify setup
         run: |
           java -version
@@ -94,16 +79,24 @@ jobs:
           echo "Cmdline tools:"
           ls ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/
 
+      # ── Patch version code so Android recognises each build as newer ──────
+      # github.run_number increments by 1 on every workflow run automatically.
+      # Without this, android.numeric_version stays at 1 forever and Android
+      # either silently skips the update or installs but keeps the old code.
+      - name: Patch version code
+        run: |
+          sed -i "s/android.numeric_version = .*/android.numeric_version = ${{ github.run_number }}/" buildozer.spec
+          echo "Version code set to: ${{ github.run_number }}"
+          grep "android.numeric_version" buildozer.spec
+
       - name: Build APK
         run: |
           buildozer -v android debug 2>&1 | tee build.log
         continue-on-error: true
-
       - name: Find APK
         run: |
           find . -name "*.apk" 2>/dev/null
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
-
       - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
@@ -111,7 +104,6 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
