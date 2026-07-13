@@ -8,8 +8,8 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
 
 version = 1.0
-# Increment this by 1 every build — Android uses this (not version) to decide
-# whether to update in-place or reject the install. Never reuse a number.
+# This is patched automatically by the GitHub Actions workflow using
+# github.run_number — do not edit manually.
 android.numeric_version = 1
 
 requirements = python3,kivy,android,pillow
@@ -23,8 +23,10 @@ android.minapi = 21
 android.ndk = 25b
 android.archs = arm64-v8a, armeabi-v7a
 
-# Disable Kivy touch postprocessing delays at the manifest level
-android.meta_data = kivy:retain_time:0,kivy:double_tap_time:0,kivy:double_tap_distance:0,kivy:retain_distance:0,kivy:jitter_distance:0
+# android.meta_data line removed — it used colon-separated format which
+# causes buildozer to crash at packaging with "not enough values to unpack".
+# Touch postprocessing delays are already disabled in main.py via os.environ
+# and Config.set() so this line was redundant anyway.
 
 # Keep the app data when updating — users won't lose their saved counts
 android.allow_backup = True
