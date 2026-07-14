@@ -19,6 +19,7 @@ from kivy.utils import platform
 from kivy.graphics import (Color, Ellipse, Line, RoundedRectangle,
                            Rectangle, Triangle, Bezier, InstructionGroup)
 from kivy.clock import Clock
+import time
 import os
 # Must be set before ANY kivy import — forces zero-delay touch on APK
 os.environ['KIVY_BCM_DISPMANX_ID'] = '0'
@@ -31,8 +32,6 @@ os.environ['KCFG_POSTPROC_JITTER_DISTANCE'] = '0'
 
 Config.set('graphics', 'resizable', '0')
 Config.set('graphics', 'show_cursor', '1')
-# Disable the 200ms tap-vs-scroll detection delay that Kivy adds on Android APKs.
-# Without this, every touch is held for up to 200ms before being dispatched.
 Config.set('input', 'mouse', 'mouse,disable_multitouch')
 Config.set('postproc', 'double_tap_time', '0')
 Config.set('postproc', 'double_tap_distance', '0')
@@ -66,7 +65,7 @@ TIMER_H = 130
 # ── Haptic feedback ──────────────────────────────────────────────────────────
 _haptic_flash_ev = None
 _vibrator = None
-_VibrationEffect = None   # cached JNI class — looked up once at init
+_VibrationEffect = None
 
 
 def _pc_haptic_flash():
@@ -96,7 +95,6 @@ def _init_haptic():
 
 
 def _do_haptic():
-    """Run on background thread — no JNI class lookups, just the vibrate call."""
     if _vibrator is None:
         return
     try:
@@ -121,8 +119,6 @@ def haptic_tap():
 
 
 # ── Sound effects ─────────────────────────────────────────────────────────────
-# Each short sound keeps a pool of POOL_SIZE pre-loaded instances so rapid
-# taps never have to wait for a previous play() to finish — no stop() stall.
 _POOL_SIZE = 3
 _pool_tap = []
 _pool_click = []
@@ -219,7 +215,7 @@ def _init_sounds():
         for key, (path, data) in paths.items():
             with open(path, 'wb') as f:
                 f.write(data)
-        _pool_tap = _make_pool(paths['tap'][0],   0.5,  _POOL_SIZE)
+        _pool_tap   = _make_pool(paths['tap'][0],   0.5,  _POOL_SIZE)
         _pool_click = _make_pool(paths['click'][0], 0.45, _POOL_SIZE)
         _pool_alarm = _make_pool(paths['alarm'][0], 0.8,  1)
         print("SOUND pools: tap=%d click=%d alarm=%d" %
@@ -234,8 +230,6 @@ def _pool_play(pool, key):
     idx = _pool_idx[key] % len(pool)
     _pool_idx[key] = idx + 1
     snd = pool[idx]
-    # Do NOT call stop() — just play() on the next idle instance in the pool.
-    # This avoids the Android stop() latency that causes the UI stall.
     try:
         snd.play()
     except Exception:
@@ -269,8 +263,7 @@ def draw_icon(c, key, cx, cy, sz):
             rw, rh = 68*s,  22*s
             Line(rounded_rectangle=(cx-bw/2, cy-14*s, bw, bh, 5*s), width=lw)
             Line(rounded_rectangle=(cx-rw/2+6*s, cy+10*s, rw, rh, 6*s), width=lw)
-            Line(points=[cx-rw/2+12*s, cy+10*s, cx -
-                 rw/2+24*s, cy+10*s+rh], width=lw*0.6)
+            Line(points=[cx-rw/2+12*s, cy+10*s, cx-rw/2+24*s, cy+10*s+rh], width=lw*0.6)
             Ellipse(pos=(cx-bw/2+18*s-wr, cy-28*s), size=(wr*2, wr*2))
             Ellipse(pos=(cx+bw/2-18*s-wr, cy-28*s), size=(wr*2, wr*2))
             hub = wr*0.38
@@ -278,26 +271,20 @@ def draw_icon(c, key, cx, cy, sz):
             Ellipse(pos=(cx+bw/2-18*s-hub, cy-28*s+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'MOTO':
-            rwr = 21*s
-            fwr = 19*s
-            rwx = cx-42*s
-            rwy = cy-16*s
-            fwx = cx+40*s
-            fwy = cy-12*s
+            rwr = 21*s; fwr = 19*s
+            rwx = cx-42*s; rwy = cy-16*s
+            fwx = cx+40*s; fwy = cy-12*s
             Ellipse(pos=(rwx-rwr, rwy-rwr), size=(rwr*2, rwr*2))
             Ellipse(pos=(fwx-fwr, fwy-fwr), size=(fwr*2, fwr*2))
             hub = rwr*0.32
             Ellipse(pos=(rwx-hub, rwy-hub), size=(hub*2, hub*2))
             hub2 = fwr*0.32
             Ellipse(pos=(fwx-hub2, fwy-hub2), size=(hub2*2, hub2*2))
-            sx = cx-6*s
-            sy = rwy+36*s
-            neck_x = fwx-10*s
-            neck_y = fwy+28*s
+            sx = cx-6*s; sy = rwy+36*s
+            neck_x = fwx-10*s; neck_y = fwy+28*s
             Line(points=[rwx, rwy+rwr, sx, sy, neck_x, neck_y], width=lw)
             Line(points=[rwx, rwy, cx-14*s, cy], width=lw*0.9)
-            Line(rounded_rectangle=(cx-28*s, cy-4 *
-                 s, 30*s, 18*s, 3*s), width=lw*0.85)
+            Line(rounded_rectangle=(cx-28*s, cy-4*s, 30*s, 18*s, 3*s), width=lw*0.85)
             Line(points=[fwx, fwy+fwr, neck_x, neck_y], width=lw)
             hbx = neck_x-4*s
             Line(points=[hbx-12*s, neck_y+8*s, hbx+10*s, neck_y-6*s], width=lw)
@@ -307,71 +294,48 @@ def draw_icon(c, key, cx, cy, sz):
         elif key == 'BUS':
             bw, bh = 92*s, 56*s
             Line(rounded_rectangle=(cx-bw/2, cy-bh/2, bw, bh, 3*s), width=lw)
-            Line(points=[cx-bw/2+8*s, cy+bh/2-4*s, cx +
-                 bw/2-8*s, cy+bh/2-4*s], width=lw*0.55)
-            win_w, win_h = 18*s, 14*s
-            win_y = cy+8*s
+            Line(points=[cx-bw/2+8*s, cy+bh/2-4*s, cx+bw/2-8*s, cy+bh/2-4*s], width=lw*0.55)
+            win_w, win_h = 18*s, 14*s; win_y = cy+8*s
             for i in range(3):
                 wx = cx-bw/2+8*s+i*26*s
                 Line(rounded_rectangle=(wx, win_y, win_w, win_h, 2*s), width=lw*0.75)
-            Line(rounded_rectangle=(cx-bw/2+8*s, cy -
-                 2*s, 20*s, 18*s, 2*s), width=lw*0.75)
+            Line(rounded_rectangle=(cx-bw/2+8*s, cy-2*s, 20*s, 18*s, 2*s), width=lw*0.75)
             Line(rectangle=(cx+bw/2-22*s, cy-bh/2+4*s, 14*s, 22*s), width=lw*0.8)
-            Line(points=[cx+bw/2-15*s, cy-bh/2+4*s, cx +
-                 bw/2-15*s, cy-bh/2+26*s], width=lw*0.55)
+            Line(points=[cx+bw/2-15*s, cy-bh/2+4*s, cx+bw/2-15*s, cy-bh/2+26*s], width=lw*0.55)
             Ellipse(pos=(cx-bw/2+20*s-wr, cy-bh/2-wr*1.9), size=(wr*2, wr*2))
             Ellipse(pos=(cx+bw/2-20*s-wr, cy-bh/2-wr*1.9), size=(wr*2, wr*2))
             hub = wr*0.35
-            Ellipse(pos=(cx-bw/2+20*s-hub, cy-bh/2 -
-                    wr*1.9+wr-hub), size=(hub*2, hub*2))
-            Ellipse(pos=(cx+bw/2-20*s-hub, cy-bh/2 -
-                    wr*1.9+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx-bw/2+20*s-hub, cy-bh/2-wr*1.9+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx+bw/2-20*s-hub, cy-bh/2-wr*1.9+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'LRY':
-            cab_w, cab_h = 32*s, 46*s
-            bod_w, bod_h = 64*s, 30*s
+            cab_w, cab_h = 32*s, 46*s; bod_w, bod_h = 64*s, 30*s
             Line(rectangle=(cx-cab_w/2-bod_w, cy-bod_h/2, bod_w, bod_h), width=lw)
             for i in range(1, 3):
                 rx = cx-cab_w/2-bod_w+i*(bod_w/3)
-                Line(points=[rx, cy-bod_h/2+3*s, rx,
-                     cy+bod_h/2-3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx-cab_w/2, cy -
-                 bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy +
-                 4*s, cab_w-8*s, 14*s, 2*s), width=lw*0.75)
-            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s,
-                 cx-cab_w/2+4*s, cy+2*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy -
-                 bod_h/2+2*s, 4*s, 12*s, 1*s), width=lw*0.7)
+                Line(points=[rx, cy-bod_h/2+3*s, rx, cy+bod_h/2-3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx-cab_w/2, cy-bod_h/2, cab_w, cab_h, 4*s), width=lw)
+            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy+4*s, cab_w-8*s, 14*s, 2*s), width=lw*0.75)
+            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s, cx-cab_w/2+4*s, cy+2*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy-bod_h/2+2*s, 4*s, 12*s, 1*s), width=lw*0.7)
             Ellipse(pos=(cx-wr, cy-bod_h/2-wr*2.1), size=(wr*2, wr*2))
-            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-wr, cy -
-                    bod_h/2-wr*2.1), size=(wr*2, wr*2))
+            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-wr, cy-bod_h/2-wr*2.1), size=(wr*2, wr*2))
             hub = wr*0.35
             Ellipse(pos=(cx-hub, cy-bod_h/2-wr*2.1+wr-hub), size=(hub*2, hub*2))
-            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-hub, cy-bod_h /
-                    2-wr*2.1+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-hub, cy-bod_h/2-wr*2.1+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'LLRY':
-            cab_w, cab_h = 28*s, 52*s
-            bod_w, bod_h = 96*s, 28*s
+            cab_w, cab_h = 28*s, 52*s; bod_w, bod_h = 96*s, 28*s
             Line(rectangle=(cx-cab_w/2-bod_w, cy-bod_h/2, bod_w, bod_h), width=lw)
             for i in range(1, 4):
                 rx = cx-cab_w/2-bod_w+i*(bod_w/4)
-                Line(points=[rx, cy-bod_h/2+3*s, rx,
-                     cy+bod_h/2-3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx-cab_w/2-12*s, cy +
-                 bod_h/2-2*s, 14*s, 8*s, 2*s), width=lw*0.7)
-            Line(rounded_rectangle=(cx-cab_w/2, cy -
-                 bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy +
-                 5*s, cab_w-8*s, 15*s, 2*s), width=lw*0.75)
-            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s,
-                 cx-cab_w/2+4*s, cy+3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy -
-                 bod_h/2+2*s, 4*s, 14*s, 1*s), width=lw*0.7)
-            front_x = cx-wr
-            mid_x = cx-cab_w/2-bod_w*0.45-wr
-            rear_x = cx-cab_w/2-bod_w+14*s-wr
+                Line(points=[rx, cy-bod_h/2+3*s, rx, cy+bod_h/2-3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx-cab_w/2-12*s, cy+bod_h/2-2*s, 14*s, 8*s, 2*s), width=lw*0.7)
+            Line(rounded_rectangle=(cx-cab_w/2, cy-bod_h/2, cab_w, cab_h, 4*s), width=lw)
+            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy+5*s, cab_w-8*s, 15*s, 2*s), width=lw*0.75)
+            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s, cx-cab_w/2+4*s, cy+3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy-bod_h/2+2*s, 4*s, 14*s, 1*s), width=lw*0.7)
+            front_x = cx-wr; mid_x = cx-cab_w/2-bod_w*0.45-wr; rear_x = cx-cab_w/2-bod_w+14*s-wr
             wheel_y = cy-bod_h/2-wr*2.1
             Ellipse(pos=(front_x, wheel_y), size=(wr*2, wr*2))
             Ellipse(pos=(mid_x,   wheel_y), size=(wr*2, wr*2))
@@ -383,7 +347,9 @@ def draw_icon(c, key, cx, cy, sz):
 
 # ── Canvas-icon button base ───────────────────────────────────────────────────
 class IconButton(Button):
-    """Dark near-black button that draws its icon via _draw_icon() override."""
+    """Dark near-black button with custom touch handling that mirrors
+    SquareVehicleButton — bypasses Kivy's standard Button dispatch which
+    is unreliable on some Android drivers."""
     CORNER = 8
     BG = (0.10, 0.11, 0.15, 1)
     BG_PRESS = (0.18, 0.20, 0.26, 1)
@@ -399,102 +365,116 @@ class IconButton(Button):
         bg = self.BG_PRESS if self._pressed else self.BG
         with self.canvas.before:
             Color(*bg)
-            RoundedRectangle(pos=self.pos, size=self.size,
-                             radius=[self.CORNER])
+            RoundedRectangle(pos=self.pos, size=self.size, radius=[self.CORNER])
         self._draw_icon()
 
     def _draw_icon(self):
-        pass   # override in subclass
+        pass
 
-    def on_press(self):
-        self._pressed = True
-        self._redraw()
+    # FIX: replace on_press/on_release method overrides with explicit
+    # on_touch_down/on_touch_up — the same pattern used by SquareVehicleButton
+    # which works reliably on Android. Kivy's standard Button dispatch
+    # (on_press/on_release events) silently fails on some Android configs.
+    def on_touch_down(self, touch):
+        if self.disabled:
+            return False
+        if self.collide_point(*touch.pos):
+            touch.grab(self)
+            self._pressed = True
+            self._redraw()
+            return True
+        return False
 
-    def on_release(self):
-        self._pressed = False
-        self._redraw()
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            self._pressed = False
+            self._redraw()
+            if self.collide_point(*touch.pos):
+                self.dispatch('on_release')
+            return True
+        return False
 
 
 # ── START / PAUSE button ──────────────────────────────────────────────────────
 class StartPauseButton(IconButton):
-    """Dark icon button showing assets/play.png or assets/pause.png."""
+    """Dark icon button showing assets/play.png or assets/pause.png.
+    Both images are pre-loaded and toggled by opacity — no runtime source
+    swap — to avoid the Android texture-reload bug."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._playing = False
-        self._img = None
-        self._src_play = os.path.join(_asset_dir(), 'play.png')
-        self._src_pause = os.path.join(_asset_dir(), 'pause.png')
-        for path, label in ((self._src_play, 'play'), (self._src_pause, 'pause')):
+        self._img_play  = None
+        self._img_pause = None
+        src_play  = os.path.join(_asset_dir(), 'play.png')
+        src_pause = os.path.join(_asset_dir(), 'pause.png')
+        for path, label in ((src_play, 'play'), (src_pause, 'pause')):
             if not os.path.exists(path):
-                print('ICON', label, path,
-                      'MISSING — place a 256x256 RGBA PNG there')
-        src = self._src_play if os.path.exists(self._src_play) else None
-        if src:
-            self._img = KivyImage(source=src, allow_stretch=True,
-                                  keep_ratio=True, size_hint=(None, None))
-            self.add_widget(self._img)
+                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+        if os.path.exists(src_play):
+            self._img_play = KivyImage(source=src_play, allow_stretch=True,
+                                       keep_ratio=True, size_hint=(None, None),
+                                       opacity=1.0)
+            self.add_widget(self._img_play)
+        if os.path.exists(src_pause):
+            self._img_pause = KivyImage(source=src_pause, allow_stretch=True,
+                                        keep_ratio=True, size_hint=(None, None),
+                                        opacity=0)
+            self.add_widget(self._img_pause)
 
     def set_playing(self, val):
         self._playing = val
-        if self._img is not None:
-            new_src = self._src_pause if val else self._src_play
-            if os.path.exists(new_src):
-                self._img.source = new_src
+        # Toggle opacity only — never swap .source at runtime (unreliable on Android)
+        if self._img_play:
+            self._img_play.opacity  = 0   if val else 1.0
+        if self._img_pause:
+            self._img_pause.opacity = 1.0 if val else 0
         self._redraw()
 
     def _draw_icon(self):
-        if self._img is None:
-            return
         w, h = self.size
-        sz = min(w, h) * 0.65
-        self._img.size = (sz, sz)
-        self._img.pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
+        sz  = min(w, h) * 0.65
+        pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
+        if self._img_play:
+            self._img_play.size  = (sz, sz)
+            self._img_play.pos   = pos
+        if self._img_pause:
+            self._img_pause.size = (sz, sz)
+            self._img_pause.pos  = pos
 
 
 # ── UNDO / REDO toggle button ─────────────────────────────────────────────────
 class UndoRedoButton(IconButton):
-    """Single dark icon button that shows assets/undo.png or assets/redo.png
-    depending on which action currently makes sense.
-    Call set_mode('undo' | 'redo' | None) — None disables/dims the button."""
+    """Single slot that shows undo.png or redo.png via opacity toggle."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._mode = None   # 'undo' | 'redo' | None (disabled)
-        self._src_undo = os.path.join(_asset_dir(), 'undo.png')
-        self._src_redo = os.path.join(_asset_dir(), 'redo.png')
-        for path, label in ((self._src_undo, 'undo'), (self._src_redo, 'redo')):
-            if not os.path.exists(path):
-                print('ICON', label, path,
-                      'MISSING — place a 256x256 RGBA PNG there')
-        # Pre-load BOTH icons once at construction time and just toggle which
-        # one is visible. Swapping an Image widget's `source` at runtime
-        # (e.g. undo.png -> redo.png) is reliable on desktop GL but has
-        # been flaky on some Android GPU/driver combos — the texture
-        # reload silently fails to show. Loading both up front and only
-        # changing opacity avoids that runtime-reload path entirely.
+        self._mode = None
         self._img_undo = None
         self._img_redo = None
-        if os.path.exists(self._src_undo):
-            self._img_undo = KivyImage(source=self._src_undo, allow_stretch=True,
+        src_undo = os.path.join(_asset_dir(), 'undo.png')
+        src_redo = os.path.join(_asset_dir(), 'redo.png')
+        for path, label in ((src_undo, 'undo'), (src_redo, 'redo')):
+            if not os.path.exists(path):
+                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+        if os.path.exists(src_undo):
+            self._img_undo = KivyImage(source=src_undo, allow_stretch=True,
                                        keep_ratio=True, size_hint=(None, None),
                                        opacity=0.25)
             self.add_widget(self._img_undo)
-        if os.path.exists(self._src_redo):
-            self._img_redo = KivyImage(source=self._src_redo, allow_stretch=True,
+        if os.path.exists(src_redo):
+            self._img_redo = KivyImage(source=src_redo, allow_stretch=True,
                                        keep_ratio=True, size_hint=(None, None),
                                        opacity=0)
             self.add_widget(self._img_redo)
         self._update_visual()
 
     def set_mode(self, mode):
-        """mode: 'undo' to show/enable the undo icon, 'redo' to show/enable
-        the redo icon, or None to disable and dim the button."""
         self._mode = mode
         self._update_visual()
 
     def _update_visual(self):
-        # Toggle opacity on the two pre-loaded images — never touch .source
         if self._img_undo is not None:
             self._img_undo.opacity = (
                 0 if self._mode == 'redo' else (1.0 if self._mode else 0.25))
@@ -504,34 +484,28 @@ class UndoRedoButton(IconButton):
 
     def _draw_icon(self):
         w, h = self.size
-        sz = min(w, h) * 0.65
+        sz  = min(w, h) * 0.65
         pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
         if self._img_undo is not None:
-            self._img_undo.size = (sz, sz)
-            self._img_undo.pos = pos
+            self._img_undo.size = (sz, sz); self._img_undo.pos = pos
         if self._img_redo is not None:
-            self._img_redo.size = (sz, sz)
-            self._img_redo.pos = pos
+            self._img_redo.size = (sz, sz); self._img_redo.pos = pos
         if self._img_undo is not None or self._img_redo is not None:
             return
-        # Fallback vector icon — used only if undo.png/redo.png can't be
-        # found (e.g. present on the dev machine but not yet bundled into
-        # an Android build). Keeps the button from rendering blank.
+        # Fallback vector if both PNGs missing
         self.canvas.after.clear()
         if w < 4 or h < 4:
             return
         cx, cy = self.x + w / 2, self.y + h / 2
-        r = min(w, h) * 0.22
-        lw = max(2.0, min(w, h) * 0.05)
+        r   = min(w, h) * 0.22
+        lw  = max(2.0, min(w, h) * 0.05)
         alpha = 0.95 if self._mode else 0.25
-        # redo mirrors undo horizontally so the two are visually distinct
-        flip = -1 if self._mode == 'redo' else 1
-        start_deg, tip_deg = 485, 215   # ~270° sweep, arrowhead at tip_deg
+        flip  = -1 if self._mode == 'redo' else 1
+        start_deg, tip_deg = 485, 215
         with self.canvas.after:
             Color(1, 1, 1, alpha)
-            Line(circle=(cx, cy, r, tip_deg, start_deg),
-                 width=lw, cap='round')
-            ang = math.radians(tip_deg)
+            Line(circle=(cx, cy, r, tip_deg, start_deg), width=lw, cap='round')
+            ang  = math.radians(tip_deg)
             tipx = cx + flip * r * math.cos(ang)
             tipy = cy + r * math.sin(ang)
             head = r * 0.95
@@ -544,31 +518,30 @@ class UndoRedoButton(IconButton):
 
 # ── LOCK / UNLOCK toggle button ───────────────────────────────────────────────
 class LockButton(IconButton):
-    """Icon button below the timer that shows assets/lock.png when unlocked
-    and assets/unlock.png when locked. Pre-loads both textures at startup so
-    there is never a runtime texture-reload (the same fix applied to Undo/Redo).
-    Call set_locked(True/False) to switch state."""
+    """Shows lock.png when unlocked, unlock.png when locked."""
+
+    _COL_UNLOCKED = (0.20, 0.45, 0.65, 1)
+    _COL_LOCKED   = (0.65, 0.35, 0.10, 1)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._is_locked = False
-        self._src_lock = os.path.join(_asset_dir(), 'lock.png')
-        self._src_unlock = os.path.join(_asset_dir(), 'unlock.png')
-        for path, label in ((self._src_lock, 'lock'), (self._src_unlock, 'unlock')):
-            if not os.path.exists(path):
-                print('ICON', label, path,
-                      'MISSING — place a 256x256 RGBA PNG there')
-        self._img_lock = None
+        self._img_lock   = None
         self._img_unlock = None
-        if os.path.exists(self._src_lock):
-            self._img_lock = KivyImage(source=self._src_lock,
-                                       allow_stretch=True, keep_ratio=True,
-                                       size_hint=(None, None), opacity=1.0)
+        src_lock   = os.path.join(_asset_dir(), 'lock.png')
+        src_unlock = os.path.join(_asset_dir(), 'unlock.png')
+        for path, label in ((src_lock, 'lock'), (src_unlock, 'unlock')):
+            if not os.path.exists(path):
+                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+        if os.path.exists(src_lock):
+            self._img_lock = KivyImage(source=src_lock, allow_stretch=True,
+                                       keep_ratio=True, size_hint=(None, None),
+                                       opacity=1.0)
             self.add_widget(self._img_lock)
-        if os.path.exists(self._src_unlock):
-            self._img_unlock = KivyImage(source=self._src_unlock,
-                                         allow_stretch=True, keep_ratio=True,
-                                         size_hint=(None, None), opacity=0)
+        if os.path.exists(src_unlock):
+            self._img_unlock = KivyImage(source=src_unlock, allow_stretch=True,
+                                         keep_ratio=True, size_hint=(None, None),
+                                         opacity=0)
             self.add_widget(self._img_unlock)
         self._update_visual()
 
@@ -576,14 +549,9 @@ class LockButton(IconButton):
         self._is_locked = locked
         self._update_visual()
 
-    # Accent colours: blue when unlocked (tap to lock), amber when locked
-    _COL_UNLOCKED = (0.20, 0.45, 0.65, 1)
-    _COL_LOCKED = (0.65, 0.35, 0.10, 1)
-
     def _update_visual(self):
-        # Show lock icon when unlocked, unlock icon when locked
         if self._img_lock:
-            self._img_lock.opacity = 0 if self._is_locked else 1.0
+            self._img_lock.opacity   = 0   if self._is_locked else 1.0
         if self._img_unlock:
             self._img_unlock.opacity = 1.0 if self._is_locked else 0
         self.BG = self._COL_LOCKED if self._is_locked else self._COL_UNLOCKED
@@ -591,40 +559,34 @@ class LockButton(IconButton):
 
     def _draw_icon(self):
         w, h = self.size
-        sz = min(w, h) * 0.60
+        sz  = min(w, h) * 0.60
         pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
         if self._img_lock:
-            self._img_lock.size = (sz, sz)
-            self._img_lock.pos = pos
+            self._img_lock.size = (sz, sz); self._img_lock.pos = pos
         if self._img_unlock:
-            self._img_unlock.size = (sz, sz)
-            self._img_unlock.pos = pos
+            self._img_unlock.size = (sz, sz); self._img_unlock.pos = pos
         if self._img_lock is not None or self._img_unlock is not None:
             return
-        # Fallback: draw a simple padlock in canvas if both PNGs are missing
+        # Fallback vector padlock
         self.canvas.after.clear()
         if w < 4 or h < 4:
             return
         cx, cy = self.x + w / 2, self.y + h / 2
-        s = min(w, h) * 0.0032
+        s  = min(w, h) * 0.0032
         lw = max(1.8, min(w, h) * 0.045)
+        bw, bh = 28*s, 22*s
         with self.canvas.after:
             Color(1, 1, 1, 0.95)
-            # shackle arc (open when unlocked, closed when locked)
-            bw, bh = 28*s, 22*s
             if self._is_locked:
                 Line(circle=(cx, cy + 10*s, 14*s, 0, 180), width=lw, cap='round')
             else:
-                Line(circle=(cx + 14*s, cy + 10*s, 14*s, 60, 180),
-                     width=lw, cap='round')
-            # body
-            Line(rounded_rectangle=(cx - bw/2, cy - 18*s, bw, 26*s, 4*s),
-                 width=lw)
-            # keyhole
+                Line(circle=(cx + 14*s, cy + 10*s, 14*s, 60, 180), width=lw, cap='round')
+            Line(rounded_rectangle=(cx - bw/2, cy - 18*s, bw, 26*s, 4*s), width=lw)
             Ellipse(pos=(cx - 5*s, cy - 5*s), size=(10*s, 10*s))
             Line(points=[cx, cy - 5*s, cx, cy - 14*s], width=lw*0.8)
 
 
+# ── Asset paths ───────────────────────────────────────────────────────────────
 _ICON_FILES = {
     'CAR':  'car.png',  'MOTO': 'moto.png',
     'LRY':  'lry.png',  'LLRY': 'llry.png',
@@ -664,6 +626,7 @@ def _icon_path(key):
 # ── Square vehicle button ─────────────────────────────────────────────────────
 class SquareVehicleButton(Button):
     CORNER_RADIUS = 8
+    PRESS_TIMEOUT = 1.0
 
     def __init__(self, key, circle_color, label_text, **kwargs):
         super().__init__(background_normal='', background_color=(0, 0, 0, 0), **kwargs)
@@ -673,12 +636,11 @@ class SquareVehicleButton(Button):
         self._pressed = False
         self._touch = None
         self._timeout_ev = None
-        # cached bg colors — populated by first _redraw()
         cr = circle_color
         self._col_normal = (None, cr)
-        self._col_press = ((1, 1, 1, 0.9),
-                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
-        self._r = self.CORNER_RADIUS
+        self._col_press  = ((1, 1, 1, 0.9),
+                            (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r    = self.CORNER_RADIUS
         self._ring = 6
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -696,23 +658,18 @@ class SquareVehicleButton(Button):
         self._redraw()
 
     def _redraw(self, *a):
-        """Full redraw — called on layout changes only."""
         w, h = self.size
-        r = self.CORNER_RADIUS
-        cr = self.circle_color
-        lbl_h = 24
-        pad = 6
-        # layout children
+        lbl_h = 24; pad = 6
         self._lbl.size = (w, lbl_h)
-        self._lbl.pos = (self.x, self.y + pad)
+        self._lbl.pos  = (self.x, self.y + pad)
         self._lbl.text_size = self._lbl.size
         icon_zone_h = h - lbl_h - pad * 2
         icon_zone_y = self.y + lbl_h + pad
         if self._img:
             icon_sz = min(w, icon_zone_h) * 0.82
             self._img.size = (icon_sz, icon_sz)
-            self._img.pos = (self.x + (w - icon_sz) / 2,
-                             icon_zone_y + (icon_zone_h - icon_sz) / 2)
+            self._img.pos  = (self.x + (w - icon_sz) / 2,
+                              icon_zone_y + (icon_zone_h - icon_sz) / 2)
         else:
             self.canvas.after.clear()
             cx = self.x + w / 2
@@ -720,16 +677,15 @@ class SquareVehicleButton(Button):
             sz = min(w, icon_zone_h) * 0.92
             with self.canvas.after:
                 draw_icon(self.canvas.after, self.key, cx, cy, sz)
-        # store normal/dim colors for fast press recolor
+        cr = self.circle_color
         self._col_normal = (None, cr)
-        self._col_press = ((1, 1, 1, 0.9),
-                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
-        self._r = r
+        self._col_press  = ((1, 1, 1, 0.9),
+                            (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r    = self.CORNER_RADIUS
         self._ring = 6
         self._redraw_bg()
 
     def _redraw_bg(self):
-        """Cheap background-only redraw — called on press/release."""
         self.canvas.before.clear()
         w, h = self.size
         with self.canvas.before:
@@ -743,25 +699,14 @@ class SquareVehicleButton(Button):
                 Color(*self._col_normal[1])
             RoundedRectangle(pos=self.pos, size=self.size, radius=[self._r])
 
-    # Safety net: occasionally a touch is cancelled by the OS (e.g. a brief
-    # accidental graze, or Android intercepting it for a system gesture)
-    # and Kivy never delivers a matching on_touch_up. Without a timeout the
-    # button would stay rendered as "pressed" forever, only clearing on the
-    # next unrelated tap. This auto-releases the look (without counting a
-    # tap) if no touch_up arrives within PRESS_TIMEOUT seconds.
-    PRESS_TIMEOUT = 1.0
-
     def on_touch_down(self, touch):
         if self.disabled:
             return False
         if self.collide_point(*touch.pos):
-            # Defensive: if a previous touch was somehow never released
-            # (the exact stuck-press scenario this fixes), clear it first
-            # so this fresh press starts from a clean state.
             if self._pressed:
                 self._clear_press()
             touch.grab(self)
-            self._touch = touch
+            self._touch   = touch
             self._pressed = True
             self._redraw_bg()
             self._arm_timeout()
@@ -772,7 +717,7 @@ class SquareVehicleButton(Button):
         if touch.grab_current is self:
             touch.ungrab(self)
             self._cancel_timeout()
-            self._touch = None
+            self._touch   = None
             self._pressed = False
             self._redraw_bg()
             if self.collide_point(*touch.pos):
@@ -782,8 +727,7 @@ class SquareVehicleButton(Button):
 
     def _arm_timeout(self):
         self._cancel_timeout()
-        self._timeout_ev = Clock.schedule_once(
-            self._force_release, self.PRESS_TIMEOUT)
+        self._timeout_ev = Clock.schedule_once(self._force_release, self.PRESS_TIMEOUT)
 
     def _cancel_timeout(self):
         if getattr(self, '_timeout_ev', None):
@@ -791,8 +735,6 @@ class SquareVehicleButton(Button):
             self._timeout_ev = None
 
     def _force_release(self, dt):
-        # The grabbed touch never sent on_touch_up — release it ourselves.
-        # This does NOT count as a tap, it only clears the stuck visual.
         self._clear_press()
 
     def _clear_press(self):
@@ -802,12 +744,12 @@ class SquareVehicleButton(Button):
                 self._touch.ungrab(self)
             except Exception:
                 pass
-        self._touch = None
+        self._touch   = None
         self._pressed = False
         self._redraw_bg()
 
     def on_press(self):
-        pass  # handled by on_touch_down
+        pass
 
     def on_release(self):
         self._pressed = False
@@ -816,12 +758,12 @@ class SquareVehicleButton(Button):
 
 # ── Grid cluster ──────────────────────────────────────────────────────────────
 GRID_KEYS_LEFT = [
-    ["LRY",  None],      # None → UNDO/REDO toggle button
+    ["LRY",  None],
     ["MOTO", "CAR"],
     ["LLRY", "BUS"],
 ]
 GRID_KEYS_RIGHT = [
-    [None,   "LRY"],     # None → START/PAUSE button
+    [None,   "LRY"],
     ["CAR",  "MOTO"],
     ["BUS",  "LLRY"],
 ]
@@ -835,9 +777,9 @@ class SquareGridCluster(GridLayout):
         grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         super().__init__(cols=len(grid_keys[0]), rows=len(grid_keys),
                          spacing=self.SEP, padding=0, **kwargs)
-        self.on_tap = on_tap
-        self.corner = corner
-        self._buttons = {}
+        self.on_tap    = on_tap
+        self.corner    = corner
+        self._buttons  = {}
         self._is_locked = is_locked or (lambda: False)
 
         for row in grid_keys:
@@ -857,7 +799,7 @@ class SquareGridCluster(GridLayout):
                                 haptic_tap(), play_startpause(),
                                 on_undo() if ub._mode == 'undo'
                                 else (on_redo() if ub._mode == 'redo' else None)))
-                                if ub._mode else None)
+                            if ub._mode else None)
                         self._undo_redo_btn = ub
                         self.add_widget(ub)
                     else:
@@ -876,18 +818,13 @@ class SquareGridCluster(GridLayout):
             Color(0.13, 0.14, 0.18, 1)
             rect = Rectangle(pos=filler.pos, size=filler.size)
         filler._rect = rect
-
         def _upd(w, *a):
-            w._rect.pos = w.pos
+            w._rect.pos  = w.pos
             w._rect.size = w.size
         filler.bind(pos=_upd, size=_upd)
         return filler
 
     def _tap(self, key):
-        # Increment counter immediately so the UI feels instant,
-        # then fire sound + haptic on a background thread so the main
-        # thread / redraw is never blocked.
-        # Both are suppressed when locked.
         self.on_tap(key)
         if self._is_locked():
             return
@@ -919,9 +856,12 @@ class JunctionSummary(BoxLayout):
         kwargs.setdefault('spacing', 6)
         kwargs.setdefault('padding', [8, 6, 8, 6])
         super().__init__(**kwargs)
-        self.on_minus = on_minus
+        self.on_minus  = on_minus
         self.is_locked = is_locked or (lambda: False)
-        self.counts = {k: 0 for k in VEHICLES}
+        self.counts    = {k: 0 for k in VEHICLES}
+        # FIX: per-key debounce timestamps — prevents Android double-release
+        # from decrementing by 2 on a single tap.
+        self._last_minus_t = {}
         self.chips = {}
         for key in (order or SUMMARY_ORDER_LEFT):
             short, color = VEHICLES[key]
@@ -935,6 +875,11 @@ class JunctionSummary(BoxLayout):
     def _minus(self, key):
         if self.is_locked():
             return
+        # Debounce: ignore a second call within 300 ms of the first.
+        now = time.monotonic()
+        if now - self._last_minus_t.get(key, 0) < 0.30:
+            return
+        self._last_minus_t[key] = now
         if self.counts[key] > 0:
             self.counts[key] -= 1
             self._refresh(key)
@@ -970,11 +915,11 @@ BASE_FONT = 48
 class TimerWidget(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation='vertical', spacing=6, **kwargs)
-        self._duration = DEFAULT_TIMER
+        self._duration  = DEFAULT_TIMER
         self._remaining = DEFAULT_TIMER
-        self._running = False
-        self._tick_ev = None
-        self._alert_ev = None
+        self._running   = False
+        self._tick_ev   = None
+        self._alert_ev  = None
         self._alert_idx = 0
         self._ext_btn_ss = None
 
@@ -995,14 +940,13 @@ class TimerWidget(BoxLayout):
         self.add_widget(row)
 
     def set_locked(self, locked):
-        """Dim and disable the SET/RESET buttons and the play/pause button."""
         alpha = 0.25 if locked else 1.0
-        self._btn_set.opacity = alpha
-        self._btn_rst.opacity = alpha
+        self._btn_set.opacity  = alpha
+        self._btn_rst.opacity  = alpha
         self._btn_set.disabled = locked
         self._btn_rst.disabled = locked
         if self._ext_btn_ss:
-            self._ext_btn_ss.opacity = alpha
+            self._ext_btn_ss.opacity  = alpha
             self._ext_btn_ss.disabled = locked
 
     def _mk(self, t, bg):
@@ -1026,7 +970,7 @@ class TimerWidget(BoxLayout):
         self._running = True
         self._set_btn_state(True)
         self._stop_alert()
-        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self.lbl.color     = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
         self._tick_ev = Clock.schedule_interval(self._tick, 1)
 
@@ -1046,16 +990,16 @@ class TimerWidget(BoxLayout):
     def _alert(self):
         play_alarm()
         self._alert_idx = 0
-        self._alert_ev = Clock.schedule_interval(self._alert_step, 0.25)
+        self._alert_ev  = Clock.schedule_interval(self._alert_step, 0.25)
 
     def _alert_step(self, dt):
         self._alert_idx += 1
         if self._alert_idx % 2 == 0:
             self.lbl.font_size = BASE_FONT * 1.35
-            self.lbl.color = (1, 0.08, 0.08, 1)
+            self.lbl.color     = (1, 0.08, 0.08, 1)
         else:
             self.lbl.font_size = BASE_FONT * 0.85
-            self.lbl.color = (0.75, 0.05, 0.05, 1)
+            self.lbl.color     = (0.75, 0.05, 0.05, 1)
 
     def _stop_alert(self):
         if self._alert_ev:
@@ -1065,16 +1009,16 @@ class TimerWidget(BoxLayout):
     def _reset_timer(self, *a):
         self._pause()
         self._stop_alert()
-        self._remaining = self._duration
-        self.lbl.text = self._fmt(self._remaining)
-        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self._remaining    = self._duration
+        self.lbl.text      = self._fmt(self._remaining)
+        self.lbl.color     = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
 
     def reset_to_default(self): self._reset_timer()
 
     def stop_alert(self):
         self._stop_alert()
-        self.lbl.color = (0.55, 0.92, 0.55, 1)
+        self.lbl.color     = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
 
     def _open_set(self, *a):
@@ -1096,49 +1040,46 @@ class TimerWidget(BoxLayout):
                              background_color=(0.15, 0.17, 0.21, 1),
                              cursor_color=(1, 1, 1, 1), size_hint=(1, 1),
                              multiline=False, halign='center', input_filter='int')
-        inp_m = _inp("MM")
-        inp_s = _inp("SS")
+        inp_m = _inp("MM"); inp_s = _inp("SS")
         colon = Label(text=":", font_size=36, bold=True, color=(1, 1, 1, 1),
                       size_hint=(None, 1), width=28)
-        time_row.add_widget(inp_m)
-        time_row.add_widget(colon)
-        time_row.add_widget(inp_s)
+        time_row.add_widget(inp_m); time_row.add_widget(colon); time_row.add_widget(inp_s)
         content.add_widget(time_row)
 
-        btns = BoxLayout(orientation='horizontal', spacing=10,
-                         size_hint=(1, None), height=56)
-        cancel = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
+        btns   = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, None), height=56)
+        cancel  = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
         confirm = self._mk("Set",    (0.20, 0.55, 0.30, 1))
-        btns.add_widget(cancel)
-        btns.add_widget(confirm)
+        btns.add_widget(cancel); btns.add_widget(confirm)
         content.add_widget(btns)
 
+        # FIX: auto_dismiss=False — prevents the first tap from landing on
+        # the semi-transparent overlay and dismissing the popup before the
+        # button registers (which made it feel like two presses were needed).
         popup = Popup(title='Set Timer', title_size=20, content=content,
                       size_hint=(0.55, None), height=280,
                       pos_hint={'center_x': 0.5, 'top': 0.98},
                       background_color=(0.14, 0.15, 0.20, 1),
                       title_color=(1, 1, 1, 1),
-                      separator_color=(0.25, 0.27, 0.32, 1))
+                      separator_color=(0.25, 0.27, 0.32, 1),
+                      auto_dismiss=False)
 
         def _cancel(*a):
-            self._duration = prev_duration
+            self._duration  = prev_duration
             self._remaining = prev_duration
-            self.lbl.text = self._fmt(prev_duration)
+            self.lbl.text   = self._fmt(prev_duration)
             popup.dismiss()
 
         def _apply(*a):
             try:
-                m_val = int(inp_m.text.strip()
-                            ) if inp_m.text.strip() else prev_m
-                s_val = int(inp_s.text.strip()
-                            ) if inp_s.text.strip() else prev_s
+                m_val = int(inp_m.text.strip()) if inp_m.text.strip() else prev_m
+                s_val = int(inp_s.text.strip()) if inp_s.text.strip() else prev_s
                 s_val = max(0, min(59, s_val))
                 self._duration = max(1, m_val*60 + s_val)
             except Exception:
                 self._duration = prev_duration
-            self._remaining = self._duration
-            self.lbl.text = self._fmt(self._remaining)
-            self.lbl.color = (0.55, 0.92, 0.55, 1)
+            self._remaining    = self._duration
+            self.lbl.text      = self._fmt(self._remaining)
+            self.lbl.color     = (0.55, 0.92, 0.55, 1)
             self.lbl.font_size = BASE_FONT
             self._stop_alert()
             popup.dismiss()
@@ -1180,13 +1121,13 @@ class LoadingScreen(FloatLayout):
                                        pos_hint={'center_x': 0.5, 'center_y': 0.16})
         self.add_widget(self._bar_widget)
         self._bar_progress = 0.0
-        self._target = 0.0
+        self._target       = 0.0
         self._bar_ev = Clock.schedule_interval(self._animate, 0.03)
         self._bar_widget.bind(pos=self._draw_bar, size=self._draw_bar)
         Clock.schedule_once(self._step1, 0.3)
 
     def _upd_bg(self, *a):
-        self._bg.pos = self.pos
+        self._bg.pos  = self.pos
         self._bg.size = self.size
 
     def _draw_bar(self, *a):
@@ -1268,8 +1209,6 @@ class RootLayout(FloatLayout):
 
         self.timer = TimerWidget(size_hint=(1, 1))
 
-        # Lock button lives below the timer in the centre column.
-        # It is the ONLY thing that stays tappable when locked.
         LOCK_BTN_H = 48
         self.lock_btn = LockButton(size_hint=(1, None), height=LOCK_BTN_H)
         self.lock_btn.bind(on_release=self._toggle_lock)
@@ -1299,33 +1238,30 @@ class RootLayout(FloatLayout):
 
         self.bind(size=self._layout)
         self.reset_btn.bind(size=self._layout)
-        self.j1_summary.chips['MOTO'][0].bind(
-            pos=self._layout, size=self._layout)
-        self.j2_summary.chips['CAR'][0].bind(
-            pos=self._layout,  size=self._layout)
+        self.j1_summary.chips['MOTO'][0].bind(pos=self._layout, size=self._layout)
+        self.j2_summary.chips['CAR'][0].bind(pos=self._layout,  size=self._layout)
         self._load()
 
     def _layout(self, *a):
         W, H = self.size
         cluster_h = H - TOP_H
 
-        moto_chip = self.j1_summary.chips['MOTO'][0]
-        left_grid_w = moto_chip.right if moto_chip.width > 1 else W*0.42
+        moto_chip    = self.j1_summary.chips['MOTO'][0]
+        left_grid_w  = moto_chip.right if moto_chip.width > 1 else W*0.42
 
-        car_chip = self.j2_summary.chips['CAR'][0]
+        car_chip     = self.j2_summary.chips['CAR'][0]
         right_grid_x = car_chip.x if car_chip.width > 1 else W*0.58
         right_grid_w = W - right_grid_x
 
         self.j1_cluster.size = (left_grid_w, cluster_h)
-        self.j1_cluster.pos = (0, 0)
+        self.j1_cluster.pos  = (0, 0)
         self.j2_cluster.size = (right_grid_w, cluster_h)
-        self.j2_cluster.pos = (right_grid_x, 0)
+        self.j2_cluster.pos  = (right_grid_x, 0)
 
-        timer_w = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
-        total_box_h = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
-        timer_h = total_box_h - self._lock_btn_h - 6
+        timer_w      = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
+        total_box_h  = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
         self.timer_box.size = (timer_w, total_box_h)
-        self.timer_box.pos = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
+        self.timer_box.pos  = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
 
     def _j1_tap(self, key):
         if self._locked:
@@ -1340,54 +1276,44 @@ class RootLayout(FloatLayout):
         self._save()
 
     def _on_minus(self):
-        """Proxy passed to JunctionSummary — honours the lock state.
-        JunctionSummary calls this after it has already decremented, so if
-        locked we put the count back and skip the save."""
-        # The actual guard lives in JunctionSummary._minus which checks
-        # _locked via the on_minus gate below — see _toggle_lock.
         self._save()
 
     def _toggle_lock(self, *a):
         self._locked = not self._locked
         self.lock_btn.set_locked(self._locked)
         if self._locked:
-            # Auto-pause the timer — must be manually resumed after unlock
             self.timer._pause()
             self.reset_btn.disabled = True
-            self.reset_btn.opacity = 0.25
+            self.reset_btn.opacity  = 0.25
             self.timer.set_locked(True)
             if hasattr(self.j1_cluster, '_undo_redo_btn'):
                 self.j1_cluster._undo_redo_btn.disabled = True
-                self.j1_cluster._undo_redo_btn.opacity = 0.25
+                self.j1_cluster._undo_redo_btn.opacity  = 0.25
             for summary in (self.j1_summary, self.j2_summary):
                 for btn, _ in summary.chips.values():
                     btn.disabled = True
-                    btn.opacity = 0.35
+                    btn.opacity  = 0.35
             for cluster in (self.j1_cluster, self.j2_cluster):
                 for btn in cluster._buttons.values():
                     btn.disabled = True
-                    btn.opacity = 0.35
+                    btn.opacity  = 0.35
         else:
-            # Unlock — timer stays paused, user must press play to resume
             self.reset_btn.disabled = False
-            self.reset_btn.opacity = 1.0
+            self.reset_btn.opacity  = 1.0
             self.timer.set_locked(False)
             if hasattr(self.j1_cluster, '_undo_redo_btn'):
                 self.j1_cluster._undo_redo_btn.disabled = False
-                self.j1_cluster._undo_redo_btn.opacity = 1.0
+                self.j1_cluster._undo_redo_btn.opacity  = 1.0
             for summary in (self.j1_summary, self.j2_summary):
                 for btn, _ in summary.chips.values():
                     btn.disabled = False
-                    btn.opacity = 1.0
+                    btn.opacity  = 1.0
             for cluster in (self.j1_cluster, self.j2_cluster):
                 for btn in cluster._buttons.values():
                     btn.disabled = False
-                    btn.opacity = 1.0
+                    btn.opacity  = 1.0
 
     def _save(self, *a):
-        # Debounce: cancel any pending save and reschedule.
-        # The actual write is deferred 0.5 s and runs on a background thread
-        # so the main/UI thread is never blocked by file I/O.
         if hasattr(self, '_save_ev') and self._save_ev:
             self._save_ev.cancel()
         self._save_ev = Clock.schedule_once(self._save_bg, 0.5)
@@ -1396,7 +1322,6 @@ class RootLayout(FloatLayout):
         import threading
         data = {'j1': self.j1_summary.get_counts(),
                 'j2': self.j2_summary.get_counts()}
-
         def _write():
             try:
                 with open(SAVE_FILE, 'w') as f:
@@ -1426,22 +1351,24 @@ class RootLayout(FloatLayout):
         def _mk(t, bg):
             return Button(text=t, font_size=18, bold=True, color=(1, 1, 1, 1),
                           background_normal='', background_color=bg, size_hint=(1, 1))
-        cancel = _mk("Cancel", (0.30, 0.32, 0.38, 1))
+        cancel  = _mk("Cancel", (0.30, 0.32, 0.38, 1))
         confirm = _mk("Reset",  (0.75, 0.20, 0.20, 1))
         btns.add_widget(cancel)
         btns.add_widget(confirm)
         content.add_widget(btns)
+
+        # FIX: auto_dismiss=False — same reason as the Set Timer popup.
         popup = Popup(title='Confirm', title_size=20, content=content,
                       size_hint=(0.65, 0.45),
                       background_color=(0.14, 0.15, 0.20, 1),
                       title_color=(1, 1, 1, 1),
-                      separator_color=(0.25, 0.27, 0.32, 1))
-        cancel.bind(on_release=popup.dismiss)
+                      separator_color=(0.25, 0.27, 0.32, 1),
+                      auto_dismiss=False)
+        cancel.bind(on_release=lambda *a: popup.dismiss())
         confirm.bind(on_release=lambda *a: (self._do_reset(), popup.dismiss()))
         popup.open()
 
     def _do_reset(self):
-        # Starting a brand-new action clears any pending redo history.
         self._undo_snapshot = (
             self.j1_summary.get_counts(),
             self.j2_summary.get_counts(),
@@ -1457,7 +1384,6 @@ class RootLayout(FloatLayout):
     def _do_undo(self):
         if self._undo_snapshot is None:
             return
-        # Stash the current (post-reset) state so Redo can re-apply it.
         self._redo_snapshot = (
             self.j1_summary.get_counts(),
             self.j2_summary.get_counts(),
@@ -1472,7 +1398,6 @@ class RootLayout(FloatLayout):
     def _do_redo(self):
         if self._redo_snapshot is None:
             return
-        # Stash the current (undone) state so Undo can restore it again.
         self._undo_snapshot = (
             self.j1_summary.get_counts(),
             self.j2_summary.get_counts(),
@@ -1505,13 +1430,9 @@ class TrafficCounterApp(App):
         if platform == 'android':
             _init_haptic()
             Window.update_viewport()
-            # Replace the default android touch provider with one that has
-            # zero postprocessing — this is the only reliable way on a
-            # packaged APK since the config file may already be baked in.
             try:
                 from kivy.base import EventLoop
                 from kivy.input.providers.androidjoystick import AndroidMotionEventProvider
-                # Remove existing providers and re-add without postproc
                 EventLoop.remove_input_provider_by_name('android')
                 EventLoop.add_input_provider(
                     AndroidMotionEventProvider('android', ''))
@@ -1519,7 +1440,6 @@ class TrafficCounterApp(App):
                 print("Touch provider override failed:", e)
 
     def on_stop(self):
-        # Flush any pending debounced save immediately on app exit.
         root = self._root.children[0] if self._root.children else None
         if isinstance(root, RootLayout):
             root._save_bg()
