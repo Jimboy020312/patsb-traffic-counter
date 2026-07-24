@@ -42,7 +42,9 @@ android.allow_backup = True
 
 fullscreen = 1
 
-icon.filename = %(source.dir)s/icon.png
+# FIX: icon.png moved into assets/ alongside the other bundled images —
+# move the actual file to assets/icon.png in your repo to match.
+icon.filename = %(source.dir)s/assets/icon.png
 
 # Include the assets folder so PNG icons are bundled in the APK
 source.include_patterns = assets/*.png,assets/*.jpg

@@ -363,7 +363,6 @@ class IconButton(Button):
     CORNER = 8
     BG = (0.10, 0.11, 0.15, 1)
     BG_PRESS = (0.18, 0.20, 0.26, 1)
-    MIN_INTERVAL = 0.3
 
     def __init__(self, **kwargs):
         # FIX: same texture-reload issue as SummaryChip/SafeButton — even
@@ -374,7 +373,7 @@ class IconButton(Button):
                          background_disabled_normal='', background_disabled_down='',
                          background_color=(0, 0, 0, 0), **kwargs)
         self._pressed = False
-        self._last_release_t = 0.0
+        self._touch = None
         self.bind(pos=self._redraw, size=self._redraw)
 
     def _redraw(self, *a):
@@ -397,7 +396,20 @@ class IconButton(Button):
         if self.disabled:
             return False
         if self.collide_point(*touch.pos):
+            # FIX: clear any stale grab before granting a new one. Android
+            # sometimes delivers on_touch_down twice for one physical tap;
+            # without this, Kivy's grab list gets two entries for the same
+            # touch and on_touch_up dispatches on_release twice. Same
+            # dedupe pattern as SquareVehicleButton/SummaryChip — a
+            # same-frame check, not a timer, so it adds no delay.
+            if getattr(self, '_touch', None) is not None:
+                try:
+                    self._touch.ungrab(self)
+                except Exception:
+                    pass
+                self._touch = None
             touch.grab(self)
+            self._touch   = touch
             self._pressed = True
             self._redraw()
             return True
@@ -406,17 +418,10 @@ class IconButton(Button):
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             touch.ungrab(self)
+            self._touch   = None
             self._pressed = False
             self._redraw()
             if self.collide_point(*touch.pos):
-                # Debounce: swallow a duplicate release event that Android
-                # sometimes double-fires for the same physical tap.
-                now = time.monotonic()
-                if now - self._last_release_t < self.MIN_INTERVAL:
-                    print('ICONBTN', self.__class__.__name__, 'duplicate release swallowed')
-                    return True
-                self._last_release_t = now
-                print('ICONBTN', self.__class__.__name__, 'on_release firing')
                 self.dispatch('on_release')
             return True
         return False
@@ -429,7 +434,6 @@ class SafeButton(Button):
     ButtonBehavior dispatch, which is unreliable on some Android drivers
     and was causing popup buttons to need two taps (and occasionally
     double-fire, opening a second overlapping popup)."""
-    MIN_INTERVAL = 0.3
 
     def __init__(self, **kwargs):
         # FIX: same Android texture-reload issue as SummaryChip — Kivy
@@ -442,12 +446,22 @@ class SafeButton(Button):
         kwargs.setdefault('background_disabled_down', '')
         super().__init__(**kwargs)
         self._touch = None
-        self._last_release_t = 0.0
 
     def on_touch_down(self, touch):
         if self.disabled:
             return False
         if self.collide_point(*touch.pos):
+            # FIX: clear any stale grab before granting a new one — see
+            # SummaryChip/IconButton for the full rationale. Prevents a
+            # duplicate on_touch_down from causing two grab-list entries
+            # and therefore two on_release dispatches for one tap, with no
+            # added delay (same-frame check, not a timer).
+            if self._touch is not None:
+                try:
+                    self._touch.ungrab(self)
+                except Exception:
+                    pass
+                self._touch = None
             touch.grab(self)
             self._touch = touch
             self.state = 'down'
@@ -460,10 +474,6 @@ class SafeButton(Button):
             self._touch = None
             self.state = 'normal'
             if self.collide_point(*touch.pos):
-                now = time.monotonic()
-                if now - self._last_release_t < self.MIN_INTERVAL:
-                    return True
-                self._last_release_t = now
                 self.dispatch('on_release')
             return True
         return False
@@ -957,6 +967,20 @@ class SummaryChip(Button):
         if self.disabled:
             return False
         if self.collide_point(*touch.pos):
+            # FIX: Android sometimes delivers on_touch_down twice for a
+            # single physical tap. If we're still holding a grab from an
+            # earlier (possibly duplicate) down event, release it before
+            # granting a new one — otherwise Kivy's grab list ends up with
+            # two entries for the same touch, and on_touch_up dispatches
+            # on_release twice, decrementing by 2. Same dedupe pattern as
+            # SquareVehicleButton's _clear_press(). This adds no delay —
+            # it's a same-frame check, not a timer.
+            if self._touch is not None:
+                try:
+                    self._touch.ungrab(self)
+                except Exception:
+                    pass
+                self._touch = None
             touch.grab(self)
             self._touch = touch
             self.state = 'down'
@@ -978,13 +1002,6 @@ class SummaryChip(Button):
             touch.ungrab(self)
             self._touch = None
             self.state = 'normal'
-            # FIX: removed the extra 300ms debounce that used to live here.
-            # It duplicated the guard already in JunctionSummary._minus and,
-            # unlike SquareVehicleButton (which has no debounce at all and
-            # is fully responsive), it was silently swallowing legitimate
-            # quick repeat taps — the actual cause of decrement feeling
-            # less smooth than increment. Touch grab/ungrab already
-            # prevents a single physical tap from dispatching twice.
             if self.collide_point(*touch.pos):
                 self.dispatch('on_release')
             else:
