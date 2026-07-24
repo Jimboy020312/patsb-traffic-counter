@@ -45,6 +45,16 @@ Window.clearcolor = (0.08, 0.09, 0.12, 1)
 if platform != 'android':
     Window.size = (1280, 720)
 
+# FIX: tracks whether the app is currently in the foreground. Used by
+# TimerWidget so the alarm sound is suppressed while the app is minimised
+# and only plays once the user reopens it — see App.on_pause/on_resume.
+_APP_FOREGROUND = True
+
+# Tracks whether the app is currently in the foreground. Set by
+# TrafficCounterApp.on_pause/on_resume. Used so the timer never plays its
+# alert sound while the app is backgrounded — only once it's reopened.
+_APP_FOREGROUND = True
+
 SAVE_FILE = os.path.join(os.path.dirname(
     os.path.abspath(__file__)), "traffic_save.json")
 DEFAULT_TIMER = 15 * 60
@@ -740,21 +750,15 @@ class SquareVehicleButton(Button):
                                   keep_ratio=True, size_hint=(None, None))
             self.add_widget(self._img)
 
-        self._lbl = Label(text=label_text, font_size=15, bold=True,
-                          color=(1, 1, 1, 0.90), halign='center', valign='middle',
-                          size_hint=(None, None))
-        self.add_widget(self._lbl)
+        # FIX: letter label under the icon removed per request — icon now
+        # fills the full button height instead of sharing space with it.
         self._redraw()
 
     def _redraw(self, *a):
         w, h = self.size
-        lbl_h = 24
-        pad = 6
-        self._lbl.size = (w, lbl_h)
-        self._lbl.pos = (self.x, self.y + pad)
-        self._lbl.text_size = self._lbl.size
-        icon_zone_h = h - lbl_h - pad * 2
-        icon_zone_y = self.y + lbl_h + pad
+        pad = 8
+        icon_zone_h = h - pad * 2
+        icon_zone_y = self.y + pad
         if self._img:
             icon_sz = min(w, icon_zone_h) * 0.82
             self._img.size = (icon_sz, icon_sz)
@@ -1033,28 +1037,34 @@ class TimerWidget(BoxLayout):
         # second Set-Timer popup underneath the first one.
         self._set_popup_open = False
 
+        # FIX (background timer): instead of only counting down via Clock
+        # ticks (which Android suspends while the app is minimised), we
+        # anchor the countdown to a wall-clock deadline. Whenever the app
+        # resumes, the remaining time is recomputed from real elapsed time
+        # rather than from however many ticks happened to fire.
+        self._deadline = None   # time.time() value when countdown hits 0, while running
+        self._pending_alarm = False  # timer expired while backgrounded; alarm not yet played
+
         self.lbl = Label(text=self._fmt(DEFAULT_TIMER), font_size=BASE_FONT,
                          bold=True, color=(0.55, 0.92, 0.55, 1),
                          size_hint=(1, 1), halign='center', valign='middle')
         self.lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
         self.add_widget(self.lbl)
 
+        # FIX: timer's own RESET button removed — RESET ALL (top bar)
+        # already resets the timer alongside the counts, so this was
+        # redundant. Only SET remains, now spanning the full row.
         row = BoxLayout(orientation='horizontal', size_hint=(1, None),
                         height=46, spacing=6, padding=[4, 0, 4, 0])
-        self._btn_set = self._mk("SET",   (0.25, 0.35, 0.60, 1))
-        self._btn_rst = self._mk("RESET", (0.55, 0.25, 0.25, 1))
+        self._btn_set = self._mk("SET", (0.25, 0.35, 0.60, 1))
         self._btn_set.bind(on_release=self._open_set)
-        self._btn_rst.bind(on_release=self._reset_timer)
         row.add_widget(self._btn_set)
-        row.add_widget(self._btn_rst)
         self.add_widget(row)
 
     def set_locked(self, locked):
         alpha = 0.25 if locked else 1.0
         self._btn_set.opacity = alpha
-        self._btn_rst.opacity = alpha
         self._btn_set.disabled = locked
-        self._btn_rst.disabled = locked
         if self._ext_btn_ss:
             self._ext_btn_ss.opacity = alpha
             self._ext_btn_ss.disabled = locked
@@ -1085,6 +1095,10 @@ class TimerWidget(BoxLayout):
         self._stop_alert()
         self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
+        # FIX: anchor to a wall-clock deadline instead of just counting
+        # ticks, so the countdown stays correct across a background/
+        # foreground cycle even if Android suspends the Clock in between.
+        self._deadline = time.time() + self._remaining
         self._tick_ev = Clock.schedule_interval(self._tick, 1)
 
     def _pause(self):
@@ -1092,12 +1106,51 @@ class TimerWidget(BoxLayout):
         self._set_btn_state(False)
         if self._tick_ev:
             self._tick_ev.cancel()
+        if self._deadline is not None:
+            self._remaining = max(0, self._deadline - time.time())
+            self._deadline = None
 
     def _tick(self, dt):
-        self._remaining -= 1
-        self.lbl.text = self._fmt(self._remaining)
-        if self._remaining <= 0:
+        if self._deadline is None:
+            return
+        remaining = self._deadline - time.time()
+        if remaining <= 0:
+            self._remaining = 0
+            self.lbl.text = self._fmt(0)
             self._pause()
+            self._expire()
+        else:
+            self._remaining = remaining
+            self.lbl.text = self._fmt(remaining)
+
+    def _expire(self):
+        # FIX: don't blast the alarm sound while the app is minimised —
+        # only actually play it once the user is back looking at the app.
+        # If we're already in the foreground, that's immediately.
+        global _APP_FOREGROUND
+        if _APP_FOREGROUND:
+            self._pending_alarm = False
+            self._alert()
+        else:
+            self._pending_alarm = True
+
+    def on_app_resume(self):
+        """Called by the App on returning to the foreground. Recomputes
+        the countdown from wall-clock time and fires the alarm now if it
+        expired while the app was minimised."""
+        if self._running and self._deadline is not None:
+            remaining = self._deadline - time.time()
+            if remaining <= 0:
+                self._remaining = 0
+                self.lbl.text = self._fmt(0)
+                self._pause()
+                self._pending_alarm = False
+                self._alert()
+                return
+            self._remaining = remaining
+            self.lbl.text = self._fmt(remaining)
+        if self._pending_alarm:
+            self._pending_alarm = False
             self._alert()
 
     def _alert(self):
@@ -1123,6 +1176,8 @@ class TimerWidget(BoxLayout):
         self._pause()
         self._stop_alert()
         self._remaining = self._duration
+        self._deadline = None
+        self._pending_alarm = False
         self.lbl.text = self._fmt(self._remaining)
         self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
@@ -1131,6 +1186,7 @@ class TimerWidget(BoxLayout):
 
     def stop_alert(self):
         self._stop_alert()
+        self._pending_alarm = False
         self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
 
@@ -1405,16 +1461,29 @@ class RootLayout(FloatLayout):
         if self._locked:
             return
         self.j1_summary.increment(key)
+        self._lock_undo_redo()
         self._save()
 
     def _j2_tap(self, key):
         if self._locked:
             return
         self.j2_summary.increment(key)
+        self._lock_undo_redo()
         self._save()
 
     def _on_minus(self):
+        self._lock_undo_redo()
         self._save()
+
+    def _lock_undo_redo(self):
+        # FIX: once counting resumes (a tap or a minus) after an undo/redo,
+        # the undo/redo snapshot chain no longer reflects a safe state to
+        # revert to, so lock the button (mode=None dims it and makes taps
+        # a no-op — see UndoRedoButton / _undo_redo_release).
+        if self._undo_snapshot is not None or self._redo_snapshot is not None:
+            self._undo_snapshot = None
+            self._redo_snapshot = None
+            self._set_undo_redo_mode(None)
 
     def _toggle_lock(self, *a):
         self._locked = not self._locked
@@ -1592,6 +1661,23 @@ class TrafficCounterApp(App):
         root = self._root.children[0] if self._root.children else None
         if isinstance(root, RootLayout):
             root._save_bg()
+
+    # FIX (background timer): Android calls on_pause when the app is
+    # minimised/loses focus and on_resume when it's brought back. We use
+    # these to flip _APP_FOREGROUND (which suppresses the alarm sound
+    # while away) and to make the timer recompute against wall-clock time
+    # once the user is looking at the screen again.
+    def on_pause(self):
+        global _APP_FOREGROUND
+        _APP_FOREGROUND = False
+        return True  # tells Android to keep the app alive in the background
+
+    def on_resume(self):
+        global _APP_FOREGROUND
+        _APP_FOREGROUND = True
+        root = self._root.children[0] if self._root.children else None
+        if isinstance(root, RootLayout):
+            root.timer.on_app_resume()
 
 
 if __name__ == '__main__':
