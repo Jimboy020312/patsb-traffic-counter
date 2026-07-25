@@ -31,46 +31,56 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev \
             cmake libsqlite3-dev libpng-dev \
             build-essential ccache
+
+      # ── SPEED FIX: cache moved up and given an id, so we can skip the ─────
+      # ~4-5 min SDK download/install step entirely when the cache already
+      # has it. Previously this ran unconditionally on every single build
+      # even when nothing needed re-downloading.
+      - name: Cache Buildozer directory
+        id: buildozer_cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildozer
+          key: buildozer-${{ runner.os }}-v7-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-v7-
+
       - name: Install Buildozer and Cython
         run: |
           pip install --upgrade pip setuptools
           pip install cython==0.29.33
           pip install buildozer==1.5.0
+
+      # FIX (speed): only runs when the cache didn't already provide a
+      # working SDK — was previously re-downloading and re-installing the
+      # Android cmdline-tools + SDK packages on every build regardless of
+      # cache hit, wasting several minutes each time for nothing.
       - name: Set up Android SDK manually
+        if: steps.buildozer_cache.outputs.cache-hit != 'true'
         run: |
           SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
           mkdir -p $SDK_ROOT/cmdline-tools
           mkdir -p $SDK_ROOT/tools/bin
-          # Download new cmdline-tools
           cd /tmp
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-9477386_latest.zip
           mv cmdline-tools $SDK_ROOT/cmdline-tools/latest
-          # Accept licenses
           mkdir -p $SDK_ROOT/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK_ROOT/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" >> $SDK_ROOT/licenses/android-sdk-license
           echo -e "\nd975f751698a77b662f1254ddbeed3901e976f5a" > $SDK_ROOT/licenses/android-sdk-preview-license
           yes | $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --sdk_root=$SDK_ROOT --licenses || true
-          # Install required packages
           $SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             --sdk_root=$SDK_ROOT \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-31"
-          # Create legacy sdkmanager wrapper so Buildozer 1.5.0 finds it
           cat > $SDK_ROOT/tools/bin/sdkmanager << 'WRAPPER'
           #!/bin/bash
           exec $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager "$@"
           WRAPPER
           chmod +x $SDK_ROOT/tools/bin/sdkmanager
-      - name: Cache Buildozer directory
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-v6-${{ hashFiles('buildozer.spec') }}
-          restore-keys: |
-            buildozer-${{ runner.os }}-v6-
+
       - name: Verify setup
         run: |
           java -version
@@ -80,64 +90,65 @@ jobs:
           ls ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/
 
       # ── Patch version code so Android recognises each build as newer ──────
-      # github.run_number increments by 1 on every workflow run automatically.
-      # Without this, android.numeric_version stays at 1 forever and Android
-      # either silently skips the update or installs but keeps the old code.
       - name: Patch version code
         run: |
           sed -i "s/android.numeric_version = .*/android.numeric_version = ${{ github.run_number }}/" buildozer.spec
           echo "Version code set to: ${{ github.run_number }}"
           grep "android.numeric_version" buildozer.spec
 
-      # ── FIX: write out the persistent release keystore and patch its ──────
-      # passwords into buildozer.spec. This is the actual fix for
-      # "App not installed as package conflicts with an existing package" —
-      # debug builds get a fresh random signing key on every ephemeral CI
-      # runner, so no two builds were ever signed the same way. Signing
-      # every build with this one persistent key means Android always
-      # recognises the new APK as a legitimate update to the old one.
-      #
-      # Requires three repo secrets (Settings → Secrets and variables →
-      # Actions), generated ONCE and never regenerated:
-      #   PATSB_KEYSTORE_B64      - `base64 -w0 patsb-release.keystore` output
-      #   PATSB_KEYSTORE_PASSWORD - the keystore password
-      #   PATSB_KEY_PASSWORD      - the key (alias) password
+      # ── Write persistent release keystore, patch passwords ────────────────
       - name: Write release keystore
         run: |
           echo "${{ secrets.PATSB_KEYSTORE_B64 }}" | base64 -d > patsb-release.keystore
           sed -i "s/CI_KEYSTORE_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEYSTORE_PASSWORD }}/" buildozer.spec
           sed -i "s/CI_KEY_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEY_PASSWORD }}/" buildozer.spec
 
-      # FIX: switched from `android debug` to `android release` — the
-      # android.keystore settings in buildozer.spec are silently ignored
-      # by debug builds, so signing config only takes effect on a release
-      # build. Buildozer signs and zipaligns the APK automatically once
-      # the keystore fields are set.
-      # FIX: the ~/.buildozer cache is keyed only on buildozer.spec, not on
-      # main.py — so when only main.py changes, the entire cached build
-      # directory (including the previously packaged app source) gets
-      # restored as-is. This forces Buildozer to always repackage fresh
-      # source on every run, while still reusing the expensive cached
-      # SDK/NDK/compiled-recipe parts of ~/.buildozer.
+      # FIX: force-delete any stale packaged app source before building —
+      # the ~/.buildozer cache is keyed on buildozer.spec, not main.py, so
+      # a main.py-only change could otherwise reuse an old packaged copy.
+      # Searches broadly (both "dists" and "dist") to catch either p4a
+      # directory layout.
       - name: Force-clean stale app package
         run: |
-          find ~/.buildozer -type d -name "dists" 2>/dev/null | while read d; do
-            echo "Removing stale dist: $d"
-            rm -rf "$d"
+          for pat in dists dist; do
+            find ~/.buildozer -type d -name "$pat" 2>/dev/null | while read d; do
+              echo "Removing stale package dir: $d"
+              rm -rf "$d"
+            done
           done
 
       - name: Build APK
         run: |
           buildozer -v android release 2>&1 | tee build.log
         continue-on-error: true
+
       - name: Find APK
         run: |
           find . -name "*.apk" 2>/dev/null
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
 
-      # FIX: rename the output APK to include the commit it was built from,
-      # so it's obvious which build corresponds to which code change
-      # instead of guessing from timestamps.
+      # FIX: hard proof, not a guess — unpacks the built APK and checks
+      # whether the actual current main.py fix code is inside it. Fails the
+      # whole workflow loudly if it's not, instead of silently shipping a
+      # stale build. "_lock_undo_redo" only exists in the fixed source.
+      - name: Verify fresh source was packaged
+        run: |
+          APK=$(find bin -name "*.apk" 2>/dev/null | head -n1)
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found — build failed before packaging."
+            exit 1
+          fi
+          mkdir -p /tmp/apk_check
+          unzip -o -q "$APK" -d /tmp/apk_check
+          if grep -rq "_lock_undo_redo" /tmp/apk_check; then
+            echo "FRESH SOURCE CONFIRMED: fix code is present in $APK"
+          else
+            echo "::error::STALE BUILD DETECTED — the current main.py fix was NOT found inside the built APK. The packaged app source is out of date."
+            exit 1
+          fi
+
+      # FIX: commit message now goes at the FRONT of the filename, per
+      # request, followed by the short commit SHA.
       - name: Rename APK with commit info
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
@@ -147,11 +158,12 @@ jobs:
             for f in *.apk; do
               [ -e "$f" ] || continue
               base="${f%.apk}"
-              mv "$f" "${base}_${SHORT_SHA}_${COMMIT_MSG}.apk"
+              mv "$f" "${COMMIT_MSG}_${SHORT_SHA}_${base}.apk"
             done
             ls -la
             cd ..
           fi
+
       - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4

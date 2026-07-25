@@ -21,7 +21,12 @@ android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,VIBRATE,WAKE_
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.archs = arm64-v8a, armeabi-v7a
+# FIX (speed): dropped armeabi-v7a (32-bit) — building for two
+# architectures roughly doubles native compile/link/package time on every
+# single build. arm64-v8a alone covers essentially all Android phones from
+# the last several years. If any surveyor colleague is on a genuinely old
+# 32-bit-only device, add "armeabi-v7a" back here.
+android.archs = arm64-v8a
 
 # android.meta_data line removed — it used colon-separated format which
 # causes buildozer to crash at packaging with "not enough values to unpack".
