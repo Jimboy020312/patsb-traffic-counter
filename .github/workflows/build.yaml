@@ -113,6 +113,19 @@ jobs:
       # by debug builds, so signing config only takes effect on a release
       # build. Buildozer signs and zipaligns the APK automatically once
       # the keystore fields are set.
+      # FIX: the ~/.buildozer cache is keyed only on buildozer.spec, not on
+      # main.py — so when only main.py changes, the entire cached build
+      # directory (including the previously packaged app source) gets
+      # restored as-is. This forces Buildozer to always repackage fresh
+      # source on every run, while still reusing the expensive cached
+      # SDK/NDK/compiled-recipe parts of ~/.buildozer.
+      - name: Force-clean stale app package
+        run: |
+          find ~/.buildozer -type d -name "dists" 2>/dev/null | while read d; do
+            echo "Removing stale dist: $d"
+            rm -rf "$d"
+          done
+
       - name: Build APK
         run: |
           buildozer -v android release 2>&1 | tee build.log
@@ -121,6 +134,24 @@ jobs:
         run: |
           find . -name "*.apk" 2>/dev/null
           ls -la bin/ 2>/dev/null || echo "No bin/ folder"
+
+      # FIX: rename the output APK to include the commit it was built from,
+      # so it's obvious which build corresponds to which code change
+      # instead of guessing from timestamps.
+      - name: Rename APK with commit info
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s | tr -c '[:alnum:]-_' '_' | cut -c1-40)
+          if [ -d bin ]; then
+            cd bin
+            for f in *.apk; do
+              [ -e "$f" ] || continue
+              base="${f%.apk}"
+              mv "$f" "${base}_${SHORT_SHA}_${COMMIT_MSG}.apk"
+            done
+            ls -la
+            cd ..
+          fi
       - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
