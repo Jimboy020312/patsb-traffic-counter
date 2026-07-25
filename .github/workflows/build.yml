@@ -116,6 +116,13 @@ jobs:
               rm -rf "$d"
             done
           done
+          # FIX: Buildozer keeps its own state file separate from the p4a
+          # dist folders. If it thinks buildozer.spec is unchanged, it can
+          # skip re-invoking the packaging step entirely, reusing an old
+          # APK even after dists is cleared. Remove it so every build is
+          # forced to actually re-run packaging.
+          echo "Removing Buildozer state file(s):"
+          find ~/.buildozer -maxdepth 1 -iname "state.db*" -print -delete 2>/dev/null || true
 
       - name: Build APK
         run: |
