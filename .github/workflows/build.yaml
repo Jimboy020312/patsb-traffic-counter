@@ -89,9 +89,33 @@ jobs:
           echo "Version code set to: ${{ github.run_number }}"
           grep "android.numeric_version" buildozer.spec
 
+      # ── FIX: write out the persistent release keystore and patch its ──────
+      # passwords into buildozer.spec. This is the actual fix for
+      # "App not installed as package conflicts with an existing package" —
+      # debug builds get a fresh random signing key on every ephemeral CI
+      # runner, so no two builds were ever signed the same way. Signing
+      # every build with this one persistent key means Android always
+      # recognises the new APK as a legitimate update to the old one.
+      #
+      # Requires three repo secrets (Settings → Secrets and variables →
+      # Actions), generated ONCE and never regenerated:
+      #   PATSB_KEYSTORE_B64      - `base64 -w0 patsb-release.keystore` output
+      #   PATSB_KEYSTORE_PASSWORD - the keystore password
+      #   PATSB_KEY_PASSWORD      - the key (alias) password
+      - name: Write release keystore
+        run: |
+          echo "${{ secrets.PATSB_KEYSTORE_B64 }}" | base64 -d > patsb-release.keystore
+          sed -i "s/CI_KEYSTORE_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEYSTORE_PASSWORD }}/" buildozer.spec
+          sed -i "s/CI_KEY_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEY_PASSWORD }}/" buildozer.spec
+
+      # FIX: switched from `android debug` to `android release` — the
+      # android.keystore settings in buildozer.spec are silently ignored
+      # by debug builds, so signing config only takes effect on a release
+      # build. Buildozer signs and zipaligns the APK automatically once
+      # the keystore fields are set.
       - name: Build APK
         run: |
-          buildozer -v android debug 2>&1 | tee build.log
+          buildozer -v android release 2>&1 | tee build.log
         continue-on-error: true
       - name: Find APK
         run: |
@@ -113,3 +137,6 @@ jobs:
             .buildozer/**/*.apk
           retention-days: 30
           if-no-files-found: warn
+      - name: Clean up keystore
+        if: always()
+        run: rm -f patsb-release.keystore

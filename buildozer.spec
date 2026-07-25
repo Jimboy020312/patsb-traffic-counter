@@ -31,14 +31,16 @@ android.archs = arm64-v8a, armeabi-v7a
 # Keep the app data when updating — users won't lose their saved counts
 android.allow_backup = True
 
-# Sign with the same key every build so Android accepts the update.
-# Generate once with:
-#   keytool -genkey -v -keystore patsb.keystore -alias patsb -keyalg RSA -keysize 2048 -validity 10000
-# Then fill in the paths/passwords below and keep patsb.keystore safe.
-# android.keystore = patsb.keystore
-# android.keystore_password = yourpassword
-# android.keyalias = patsb
-# android.keyalias_password = yourpassword
+# Sign with the same key every build so Android always accepts the update
+# in place, rather than refusing with "conflicts with an existing package".
+# The keystore file itself is written out by the CI workflow from a secret
+# (see build.yml) — it is never committed to the repo. The password
+# placeholders below are patched in at build time via sed, the same way
+# android.numeric_version is patched using github.run_number.
+android.keystore = %(source.dir)s/patsb-release.keystore
+android.keystore_password = CI_KEYSTORE_PASSWORD_PLACEHOLDER
+android.keyalias = patsb
+android.keyalias_password = CI_KEY_PASSWORD_PLACEHOLDER
 
 fullscreen = 1
 
