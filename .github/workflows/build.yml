@@ -124,10 +124,26 @@ jobs:
           echo "Removing Buildozer state file(s):"
           find ~/.buildozer -maxdepth 1 -iname "state.db*" -print -delete 2>/dev/null || true
 
+      # FIX: bin/ may still contain an old leftover APK (possibly even
+      # committed to git). Wipe it before building so "Find APK" can only
+      # ever pick up output from THIS run.
+      - name: Clean old bin output
+        run: rm -rf bin
+
+      # FIX: continue-on-error was silently swallowing real build
+      # failures — if `buildozer android release` genuinely errored out
+      # (e.g. a signing problem), the workflow kept going anyway and later
+      # steps quietly picked up a stale leftover APK instead of failing
+      # loudly. Now a real build failure stops the workflow here, with the
+      # log printed directly so the actual error is visible immediately.
       - name: Build APK
         run: |
           buildozer -v android release 2>&1 | tee build.log
-        continue-on-error: true
+          if [ ! -d bin ] || [ -z "$(find bin -name '*.apk' 2>/dev/null)" ]; then
+            echo "::error::buildozer did not produce an APK. Last 100 lines of the log:"
+            tail -n 100 build.log
+            exit 1
+          fi
 
       - name: Find APK
         run: |
