@@ -91,7 +91,11 @@ jobs:
         env:
           KIVY_GL_BACKEND: angle_sdl2
         run: |
-          python -m PyInstaller --name PATSB_Traffic_Counter --onefile --windowed `
+          # FIX (diagnostic): --windowed removed for now — it hides all
+          # console output, including the traceback for whatever's
+          # crashing the exe on launch. Once that's fixed, --windowed can
+          # go back so the app doesn't show a console window normally.
+          python -m PyInstaller --name PATSB_Traffic_Counter --onefile `
             --add-data "assets;assets" `
             --icon "assets/icon.png" `
             --log-level DEBUG `
