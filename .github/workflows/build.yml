@@ -159,6 +159,19 @@ jobs:
             exit 1
           fi
 
+      # FIX: buildozer can leave BOTH an unsigned intermediate APK and the
+      # final signed one in bin/. An unsigned APK is roughly half the size
+      # and Android refuses to install it ("package appears to be
+      # invalid"). Delete the unsigned one immediately so nothing
+      # downstream can ever pick it up by accident.
+      - name: Remove unsigned intermediate APK
+        run: |
+          find bin -iname "*-unsigned.apk" -print -delete 2>/dev/null || true
+          if [ -z "$(find bin -name '*.apk' 2>/dev/null)" ]; then
+            echo "::error::Only an unsigned APK was produced — the signed final APK is missing. This means signing genuinely failed; check the keystore secrets."
+            exit 1
+          fi
+
       - name: Find APK
         run: |
           find . -name "*.apk" 2>/dev/null
@@ -258,9 +271,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PATSB-Traffic-Counter
-          path: |
-            bin/*.apk
-            .buildozer/**/*.apk
+          # FIX: removed .buildozer/**/*.apk — that glob could surface an
+          # extra unsigned intermediate copy from deep inside the build
+          # tree, leaving two similarly-named APKs in the artifact zip
+          # with no obvious way to tell which one is correct. bin/ is the
+          # only place the final signed APK should ever be picked up from.
+          path: bin/*.apk
           retention-days: 30
           if-no-files-found: warn
       - name: Clean up keystore
