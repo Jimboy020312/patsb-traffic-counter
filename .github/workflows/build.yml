@@ -145,31 +145,46 @@ jobs:
             echo "::error::No APK found — build failed before packaging."
             exit 1
           fi
-          mkdir -p /tmp/apk_check
-          unzip -o -q "$APK" -d /tmp/apk_check
+          echo "Checking $APK"
+          cat > /tmp/scan_apk.py << 'PYEOF'
+          import zipfile, sys, io
 
-          # FIX: python-for-android often bundles the app's python source
-          # as a nested archive inside assets/ (not plain files) — a
-          # single unzip level wouldn't expose main.py's actual text even
-          # in a genuinely fresh build, giving a false "stale" reading.
-          # Recursively extract any nested zip-like files a few levels
-          # deep before searching.
-          for i in 1 2 3 4; do
-            find /tmp/apk_check -type f 2>/dev/null | while read f; do
-              if file "$f" 2>/dev/null | grep -qi "zip archive"; then
-                mkdir -p "${f}__x"
-                unzip -o -q "$f" -d "${f}__x" 2>/dev/null
-              fi
-            done
-          done
+          TARGET = b"_lock_undo_redo"
 
-          echo "Files containing main.py anywhere in the package:"
-          find /tmp/apk_check -iname "main.py" 2>/dev/null
+          def scan(zf, path_prefix=""):
+              found = False
+              for info in zf.infolist():
+                  full_name = path_prefix + info.filename
+                  try:
+                      data = zf.read(info.filename)
+                  except Exception as e:
+                      print(f"  (could not read {full_name}: {e})")
+                      continue
+                  if full_name.lower().endswith(('.py', '.pyc', '.pyo')):
+                      print(f"  python-ish file: {full_name} ({len(data)} bytes)")
+                  if TARGET in data:
+                      print(f"FOUND target string in: {full_name}")
+                      found = True
+                  # Try treating this entry as a nested zip regardless of
+                  # its name/extension — p4a sometimes bundles app source
+                  # as a zip renamed with a misleading extension.
+                  try:
+                      nested = zipfile.ZipFile(io.BytesIO(data))
+                  except Exception:
+                      continue
+                  if scan(nested, full_name + "!/"):
+                      found = True
+              return found
 
-          if grep -rq "_lock_undo_redo" /tmp/apk_check 2>/dev/null; then
+          with zipfile.ZipFile(sys.argv[1]) as zf:
+              result = scan(zf)
+
+          sys.exit(0 if result else 1)
+          PYEOF
+          if python3 /tmp/scan_apk.py "$APK"; then
             echo "FRESH SOURCE CONFIRMED: fix code is present in $APK"
           else
-            echo "::error::STALE BUILD DETECTED — the current main.py fix was NOT found inside the built APK (checked nested archives too). The packaged app source is out of date."
+            echo "::error::STALE BUILD DETECTED — the current main.py fix was NOT found inside the built APK (recursively checked all nested zip content). The packaged app source is out of date."
             exit 1
           fi
 
