@@ -150,7 +150,18 @@ jobs:
       # steps quietly picked up a stale leftover APK instead of failing
       # loudly. Now a real build failure stops the workflow here, with the
       # log printed directly so the actual error is visible immediately.
+      # FIX: buildozer.spec's android.keystore/keystore_password/keyalias
+      # fields were supposed to get translated into these exact env vars
+      # by Buildozer before invoking python-for-android — but the build
+      # log showed "P4A_RELEASE_KEYSTORE is missing", meaning that
+      # translation isn't happening in this buildozer version. Set them
+      # directly ourselves so signing can't silently fail this way again.
       - name: Build APK
+        env:
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/patsb-release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.PATSB_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYALIAS: patsb
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.PATSB_KEY_PASSWORD }}
         run: |
           buildozer -v android release 2>&1 | tee build.log
           if [ ! -d bin ] || [ -z "$(find bin -name '*.apk' 2>/dev/null)" ]; then
