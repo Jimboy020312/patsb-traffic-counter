@@ -32,6 +32,26 @@ jobs:
             cmake libsqlite3-dev libpng-dev \
             build-essential ccache
 
+      # FIX (speed): ccache was installed but its own cache directory was
+      # never persisted across CI runs — every run started with an empty
+      # ccache and got zero benefit from it. Cached separately from (and
+      # NOT keyed on) buildozer.spec, so it still helps even on a run that
+      # needs a cold ~/.buildozer rebuild (e.g. after a buildozer.spec
+      # change). 2G cap keeps it from growing unbounded.
+      - name: Cache ccache directory
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-v1
+          restore-keys: |
+            ccache-${{ runner.os }}-
+
+      - name: Configure ccache
+        run: |
+          mkdir -p ~/.ccache
+          ccache --max-size=2G
+          ccache --set-config=cache_dir=~/.ccache
+
       # ── SPEED FIX: cache moved up and given an id, so we can skip the ─────
       # ~4-5 min SDK download/install step entirely when the cache already
       # has it. Previously this ran unconditionally on every single build
@@ -169,6 +189,9 @@ jobs:
             tail -n 100 build.log
             exit 1
           fi
+
+      - name: ccache stats
+        run: ccache -s
 
       # FIX: buildozer can leave BOTH an unsigned intermediate APK and the
       # final signed one in bin/. An unsigned APK is roughly half the size
