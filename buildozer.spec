@@ -21,6 +21,10 @@ android.permissions = WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,VIBRATE,WAKE_
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
+# FIX: recent Buildozer defaults `android release` to producing a .aab
+# (Google Play App Bundle) instead of a plain .apk. AABs can't be
+# sideloaded/installed directly — this forces a real installable APK.
+android.release_artifact = apk
 # FIX (speed): dropped armeabi-v7a (32-bit) — building for two
 # architectures roughly doubles native compile/link/package time on every
 # single build. arm64-v8a alone covers essentially all Android phones from
