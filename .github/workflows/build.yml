@@ -103,6 +103,20 @@ jobs:
           sed -i "s/CI_KEYSTORE_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEYSTORE_PASSWORD }}/" buildozer.spec
           sed -i "s/CI_KEY_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEY_PASSWORD }}/" buildozer.spec
 
+      # FIX: confirms the sed patch actually replaced both placeholders,
+      # without ever printing the real password. sed silently does nothing
+      # if the secret contains characters like / or & that collide with
+      # its own syntax — this catches that instead of producing a
+      # silently-unsigned APK.
+      - name: Verify keystore passwords were patched
+        run: |
+          if grep -q "CI_KEYSTORE_PASSWORD_PLACEHOLDER\|CI_KEY_PASSWORD_PLACEHOLDER" buildozer.spec; then
+            echo "::error::Keystore password placeholder was NOT replaced. Check that PATSB_KEYSTORE_PASSWORD and PATSB_KEY_PASSWORD secrets exist, and that the password doesn't contain / or & (which break this sed command)."
+            exit 1
+          else
+            echo "Keystore password placeholders were replaced (values hidden)."
+          fi
+
       # FIX: force-delete any stale packaged app source before building —
       # the ~/.buildozer cache is keyed on buildozer.spec, not main.py, so
       # a main.py-only change could otherwise reuse an old packaged copy.
@@ -163,38 +177,50 @@ jobs:
           fi
           echo "Checking $APK"
           cat > /tmp/scan_apk.py << 'PYEOF'
-          import zipfile, sys, io
+          import zipfile, tarfile, sys, io
 
           TARGET = b"_lock_undo_redo"
+          total_entries = [0]
 
-          def scan(zf, path_prefix=""):
+          def scan(entries_iter, read_fn, path_prefix=""):
               found = False
-              for info in zf.infolist():
-                  full_name = path_prefix + info.filename
+              for name in entries_iter:
+                  full_name = path_prefix + name
+                  total_entries[0] += 1
                   try:
-                      data = zf.read(info.filename)
+                      data = read_fn(name)
                   except Exception as e:
-                      print(f"  (could not read {full_name}: {e})")
                       continue
                   if full_name.lower().endswith(('.py', '.pyc', '.pyo')):
                       print(f"  python-ish file: {full_name} ({len(data)} bytes)")
                   if TARGET in data:
                       print(f"FOUND target string in: {full_name}")
                       found = True
-                  # Try treating this entry as a nested zip regardless of
-                  # its name/extension — p4a sometimes bundles app source
-                  # as a zip renamed with a misleading extension.
+                  # Try nested zip
                   try:
-                      nested = zipfile.ZipFile(io.BytesIO(data))
-                  except Exception:
+                      nz = zipfile.ZipFile(io.BytesIO(data))
+                      if scan(nz.namelist(), nz.read, full_name + "!/"):
+                          found = True
                       continue
-                  if scan(nested, full_name + "!/"):
-                      found = True
+                  except Exception:
+                      pass
+                  # Try nested tar (some p4a bootstraps bundle app source
+                  # as a .tar, not a .zip, regardless of file extension)
+                  try:
+                      tf = tarfile.open(fileobj=io.BytesIO(data))
+                      names = [m.name for m in tf.getmembers() if m.isfile()]
+                      def _tread(n, tf=tf):
+                          return tf.extractfile(n).read()
+                      if scan(names, _tread, full_name + "!/"):
+                          found = True
+                  except Exception:
+                      pass
               return found
 
           with zipfile.ZipFile(sys.argv[1]) as zf:
-              result = scan(zf)
+              result = scan(zf.namelist(), zf.read)
 
+          print(f"Total entries scanned (incl. nested): {total_entries[0]}")
           sys.exit(0 if result else 1)
           PYEOF
           if python3 /tmp/scan_apk.py "$APK"; then
