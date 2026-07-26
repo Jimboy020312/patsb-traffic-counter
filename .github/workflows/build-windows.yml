@@ -39,17 +39,57 @@ jobs:
       # resolve to attempting a source build instead of grabbing a wheel,
       # which involves compiling Cython extensions and can take a very
       # long time (or effectively hang) instead of the usual ~30 seconds.
+      # kivy_deps.angle is also installed here — see the Build step below
+      # for why it's needed.
+      # FIX: the actual root cause of the 2-hour hang — GitHub's Windows
+      # runners only provide a basic "GDI Generic" OpenGL 1.1 software
+      # stub with no real GPU. Kivy creates a real window/GL context the
+      # moment it's imported (not deferred to app launch), so PyInstaller's
+      # analysis phase genuinely crashes Kivy's window init (it requires
+      # OpenGL 2.0 minimum) — and that crash didn't exit cleanly, hanging
+      # the job instead of failing fast.
+      #
+      # Fix: drop Mesa's software OpenGL renderer (llvmpipe, real 2.0+
+      # support, just slower than a GPU) next to python.exe. Windows'
+      # DLL search order checks the executable's own folder before
+      # System32, so this doesn't touch anything system-wide — it only
+      # affects this specific python.exe.
+      - name: Install Mesa software OpenGL renderer
+        shell: powershell
+        run: |
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -match "release-msvc\.7z$" } | Select-Object -First 1
+          if (-not $asset) { throw "Could not find a suitable mesa-dist-win release asset" }
+          Write-Host "Downloading $($asset.name)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile mesa.7z
+
+          & "C:\Program Files\7-Zip\7z.exe" x mesa.7z -omesa_extracted -y
+
+          $pythonDir = Split-Path -Parent (Get-Command python).Source
+          Write-Host "Deploying Mesa opengl32.dll to $pythonDir"
+          Copy-Item "mesa_extracted\x64\opengl32.dll" -Destination $pythonDir -Force
+          if (Test-Path "mesa_extracted\x64\libgallium_wgl.dll") {
+            Copy-Item "mesa_extracted\x64\libgallium_wgl.dll" -Destination $pythonDir -Force
+          }
+
       - name: Install Kivy and PyInstaller
         run: |
           python -m pip install --upgrade pip
-          pip install kivy==2.3.0 pyinstaller==6.10.0 pillow
+          pip install kivy==2.3.0 kivy_deps.angle kivy_deps.glew kivy_deps.sdl2 pyinstaller==6.10.0 pillow
 
-      # FIX: Kivy bundles its own SDL2/GLEW binaries and data files that
-      # PyInstaller can't find automatically — this uses Kivy's own
-      # PyInstaller hooks so those get included in the .exe correctly.
-      # --log-level DEBUG added so if this ever hangs again, the log
-      # shows exactly which file/stage it was on when it stopped.
+      # FIX: this is what was actually causing the multi-hour hang.
+      # GitHub's windows-latest runners have no real GPU — only a
+      # software OpenGL 1.1 renderer via GDI. PyInstaller's analysis
+      # phase imports main.py to discover dependencies, which initializes
+      # Kivy's Window and crashes hard ("Minimum required OpenGL version
+      # (2.0) NOT found!"), leaving the process stuck rather than exiting
+      # cleanly. KIVY_GL_BACKEND=angle_sdl2 tells Kivy to use its bundled
+      # ANGLE backend (translates to DirectX) instead of raw OpenGL —
+      # DirectX is available even without real GPU drivers, so this is
+      # the standard fix for building/running Kivy apps in headless CI.
       - name: Build EXE with PyInstaller
+        env:
+          KIVY_GL_BACKEND: angle_sdl2
         run: |
           python -m PyInstaller --name PATSB_Traffic_Counter --onefile --windowed `
             --add-data "assets;assets" `
