@@ -1,0 +1,54 @@
+name: Build PATSB Traffic Counter Windows EXE
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install Kivy and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install kivy pyinstaller pillow
+
+      # FIX: Kivy bundles its own SDL2/GLEW binaries and data files that
+      # PyInstaller can't find automatically — this uses Kivy's own
+      # PyInstaller hooks so those get included in the .exe correctly.
+      - name: Build EXE with PyInstaller
+        run: |
+          python -m PyInstaller --name PATSB_Traffic_Counter --onefile --windowed `
+            --add-data "assets;assets" `
+            --icon "assets/icon.png" `
+            main.py
+
+      - name: Rename EXE with commit info
+        shell: bash
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          COMMIT_MSG=$(git log -1 --pretty=%s | tr -c '[:alnum:]-_' '_' | cut -c1-40)
+          cd dist
+          for f in *.exe; do
+            [ -e "$f" ] || continue
+            base="${f%.exe}"
+            mv "$f" "${COMMIT_MSG}_${SHORT_SHA}_${base}.exe"
+          done
+          ls -la
+
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: PATSB-Traffic-Counter-Windows
+          path: dist/*.exe
+          retention-days: 30
+          if-no-files-found: warn

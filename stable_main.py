@@ -21,7 +21,6 @@ from kivy.graphics import (Color, Ellipse, Line, RoundedRectangle,
 from kivy.clock import Clock
 import time
 import os
-import sys
 # Must be set before ANY kivy import — forces zero-delay touch on APK
 os.environ['KIVY_BCM_DISPMANX_ID'] = '0'
 os.environ['KCFG_POSTPROC_DOUBLE_TAP_TIME'] = '0'
@@ -226,7 +225,7 @@ def _init_sounds():
         for key, (path, data) in paths.items():
             with open(path, 'wb') as f:
                 f.write(data)
-        _pool_tap   = _make_pool(paths['tap'][0],   0.5,  _POOL_SIZE)
+        _pool_tap = _make_pool(paths['tap'][0],   0.5,  _POOL_SIZE)
         _pool_click = _make_pool(paths['click'][0], 0.45, _POOL_SIZE)
         _pool_alarm = _make_pool(paths['alarm'][0], 0.8,  1)
         print("SOUND pools: tap=%d click=%d alarm=%d" %
@@ -274,7 +273,8 @@ def draw_icon(c, key, cx, cy, sz):
             rw, rh = 68*s,  22*s
             Line(rounded_rectangle=(cx-bw/2, cy-14*s, bw, bh, 5*s), width=lw)
             Line(rounded_rectangle=(cx-rw/2+6*s, cy+10*s, rw, rh, 6*s), width=lw)
-            Line(points=[cx-rw/2+12*s, cy+10*s, cx-rw/2+24*s, cy+10*s+rh], width=lw*0.6)
+            Line(points=[cx-rw/2+12*s, cy+10*s, cx -
+                 rw/2+24*s, cy+10*s+rh], width=lw*0.6)
             Ellipse(pos=(cx-bw/2+18*s-wr, cy-28*s), size=(wr*2, wr*2))
             Ellipse(pos=(cx+bw/2-18*s-wr, cy-28*s), size=(wr*2, wr*2))
             hub = wr*0.38
@@ -282,20 +282,26 @@ def draw_icon(c, key, cx, cy, sz):
             Ellipse(pos=(cx+bw/2-18*s-hub, cy-28*s+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'MOTO':
-            rwr = 21*s; fwr = 19*s
-            rwx = cx-42*s; rwy = cy-16*s
-            fwx = cx+40*s; fwy = cy-12*s
+            rwr = 21*s
+            fwr = 19*s
+            rwx = cx-42*s
+            rwy = cy-16*s
+            fwx = cx+40*s
+            fwy = cy-12*s
             Ellipse(pos=(rwx-rwr, rwy-rwr), size=(rwr*2, rwr*2))
             Ellipse(pos=(fwx-fwr, fwy-fwr), size=(fwr*2, fwr*2))
             hub = rwr*0.32
             Ellipse(pos=(rwx-hub, rwy-hub), size=(hub*2, hub*2))
             hub2 = fwr*0.32
             Ellipse(pos=(fwx-hub2, fwy-hub2), size=(hub2*2, hub2*2))
-            sx = cx-6*s; sy = rwy+36*s
-            neck_x = fwx-10*s; neck_y = fwy+28*s
+            sx = cx-6*s
+            sy = rwy+36*s
+            neck_x = fwx-10*s
+            neck_y = fwy+28*s
             Line(points=[rwx, rwy+rwr, sx, sy, neck_x, neck_y], width=lw)
             Line(points=[rwx, rwy, cx-14*s, cy], width=lw*0.9)
-            Line(rounded_rectangle=(cx-28*s, cy-4*s, 30*s, 18*s, 3*s), width=lw*0.85)
+            Line(rounded_rectangle=(cx-28*s, cy-4 *
+                 s, 30*s, 18*s, 3*s), width=lw*0.85)
             Line(points=[fwx, fwy+fwr, neck_x, neck_y], width=lw)
             hbx = neck_x-4*s
             Line(points=[hbx-12*s, neck_y+8*s, hbx+10*s, neck_y-6*s], width=lw)
@@ -305,48 +311,71 @@ def draw_icon(c, key, cx, cy, sz):
         elif key == 'BUS':
             bw, bh = 92*s, 56*s
             Line(rounded_rectangle=(cx-bw/2, cy-bh/2, bw, bh, 3*s), width=lw)
-            Line(points=[cx-bw/2+8*s, cy+bh/2-4*s, cx+bw/2-8*s, cy+bh/2-4*s], width=lw*0.55)
-            win_w, win_h = 18*s, 14*s; win_y = cy+8*s
+            Line(points=[cx-bw/2+8*s, cy+bh/2-4*s, cx +
+                 bw/2-8*s, cy+bh/2-4*s], width=lw*0.55)
+            win_w, win_h = 18*s, 14*s
+            win_y = cy+8*s
             for i in range(3):
                 wx = cx-bw/2+8*s+i*26*s
                 Line(rounded_rectangle=(wx, win_y, win_w, win_h, 2*s), width=lw*0.75)
-            Line(rounded_rectangle=(cx-bw/2+8*s, cy-2*s, 20*s, 18*s, 2*s), width=lw*0.75)
+            Line(rounded_rectangle=(cx-bw/2+8*s, cy -
+                 2*s, 20*s, 18*s, 2*s), width=lw*0.75)
             Line(rectangle=(cx+bw/2-22*s, cy-bh/2+4*s, 14*s, 22*s), width=lw*0.8)
-            Line(points=[cx+bw/2-15*s, cy-bh/2+4*s, cx+bw/2-15*s, cy-bh/2+26*s], width=lw*0.55)
+            Line(points=[cx+bw/2-15*s, cy-bh/2+4*s, cx +
+                 bw/2-15*s, cy-bh/2+26*s], width=lw*0.55)
             Ellipse(pos=(cx-bw/2+20*s-wr, cy-bh/2-wr*1.9), size=(wr*2, wr*2))
             Ellipse(pos=(cx+bw/2-20*s-wr, cy-bh/2-wr*1.9), size=(wr*2, wr*2))
             hub = wr*0.35
-            Ellipse(pos=(cx-bw/2+20*s-hub, cy-bh/2-wr*1.9+wr-hub), size=(hub*2, hub*2))
-            Ellipse(pos=(cx+bw/2-20*s-hub, cy-bh/2-wr*1.9+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx-bw/2+20*s-hub, cy-bh/2 -
+                    wr*1.9+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx+bw/2-20*s-hub, cy-bh/2 -
+                    wr*1.9+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'LRY':
-            cab_w, cab_h = 32*s, 46*s; bod_w, bod_h = 64*s, 30*s
+            cab_w, cab_h = 32*s, 46*s
+            bod_w, bod_h = 64*s, 30*s
             Line(rectangle=(cx-cab_w/2-bod_w, cy-bod_h/2, bod_w, bod_h), width=lw)
             for i in range(1, 3):
                 rx = cx-cab_w/2-bod_w+i*(bod_w/3)
-                Line(points=[rx, cy-bod_h/2+3*s, rx, cy+bod_h/2-3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx-cab_w/2, cy-bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy+4*s, cab_w-8*s, 14*s, 2*s), width=lw*0.75)
-            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s, cx-cab_w/2+4*s, cy+2*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy-bod_h/2+2*s, 4*s, 12*s, 1*s), width=lw*0.7)
+                Line(points=[rx, cy-bod_h/2+3*s, rx,
+                     cy+bod_h/2-3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx-cab_w/2, cy -
+                 bod_h/2, cab_w, cab_h, 4*s), width=lw)
+            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy +
+                 4*s, cab_w-8*s, 14*s, 2*s), width=lw*0.75)
+            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s,
+                 cx-cab_w/2+4*s, cy+2*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy -
+                 bod_h/2+2*s, 4*s, 12*s, 1*s), width=lw*0.7)
             Ellipse(pos=(cx-wr, cy-bod_h/2-wr*2.1), size=(wr*2, wr*2))
-            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-wr, cy-bod_h/2-wr*2.1), size=(wr*2, wr*2))
+            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-wr, cy -
+                    bod_h/2-wr*2.1), size=(wr*2, wr*2))
             hub = wr*0.35
             Ellipse(pos=(cx-hub, cy-bod_h/2-wr*2.1+wr-hub), size=(hub*2, hub*2))
-            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-hub, cy-bod_h/2-wr*2.1+wr-hub), size=(hub*2, hub*2))
+            Ellipse(pos=(cx-cab_w/2-bod_w+16*s-hub, cy-bod_h /
+                    2-wr*2.1+wr-hub), size=(hub*2, hub*2))
 
         elif key == 'LLRY':
-            cab_w, cab_h = 28*s, 52*s; bod_w, bod_h = 96*s, 28*s
+            cab_w, cab_h = 28*s, 52*s
+            bod_w, bod_h = 96*s, 28*s
             Line(rectangle=(cx-cab_w/2-bod_w, cy-bod_h/2, bod_w, bod_h), width=lw)
             for i in range(1, 4):
                 rx = cx-cab_w/2-bod_w+i*(bod_w/4)
-                Line(points=[rx, cy-bod_h/2+3*s, rx, cy+bod_h/2-3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx-cab_w/2-12*s, cy+bod_h/2-2*s, 14*s, 8*s, 2*s), width=lw*0.7)
-            Line(rounded_rectangle=(cx-cab_w/2, cy-bod_h/2, cab_w, cab_h, 4*s), width=lw)
-            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy+5*s, cab_w-8*s, 15*s, 2*s), width=lw*0.75)
-            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s, cx-cab_w/2+4*s, cy+3*s], width=lw*0.55)
-            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy-bod_h/2+2*s, 4*s, 14*s, 1*s), width=lw*0.7)
-            front_x = cx-wr; mid_x = cx-cab_w/2-bod_w*0.45-wr; rear_x = cx-cab_w/2-bod_w+14*s-wr
+                Line(points=[rx, cy-bod_h/2+3*s, rx,
+                     cy+bod_h/2-3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx-cab_w/2-12*s, cy +
+                 bod_h/2-2*s, 14*s, 8*s, 2*s), width=lw*0.7)
+            Line(rounded_rectangle=(cx-cab_w/2, cy -
+                 bod_h/2, cab_w, cab_h, 4*s), width=lw)
+            Line(rounded_rectangle=(cx-cab_w/2+4*s, cy +
+                 5*s, cab_w-8*s, 15*s, 2*s), width=lw*0.75)
+            Line(points=[cx-cab_w/2+4*s, cy-bod_h/2+3*s,
+                 cx-cab_w/2+4*s, cy+3*s], width=lw*0.55)
+            Line(rounded_rectangle=(cx+cab_w/2-5*s, cy -
+                 bod_h/2+2*s, 4*s, 14*s, 1*s), width=lw*0.7)
+            front_x = cx-wr
+            mid_x = cx-cab_w/2-bod_w*0.45-wr
+            rear_x = cx-cab_w/2-bod_w+14*s-wr
             wheel_y = cy-bod_h/2-wr*2.1
             Ellipse(pos=(front_x, wheel_y), size=(wr*2, wr*2))
             Ellipse(pos=(mid_x,   wheel_y), size=(wr*2, wr*2))
@@ -383,7 +412,8 @@ class IconButton(Button):
         bg = self.BG_PRESS if self._pressed else self.BG
         with self.canvas.before:
             Color(*bg)
-            RoundedRectangle(pos=self.pos, size=self.size, radius=[self.CORNER])
+            RoundedRectangle(pos=self.pos, size=self.size,
+                             radius=[self.CORNER])
         self._draw_icon()
 
     def _draw_icon(self):
@@ -410,7 +440,7 @@ class IconButton(Button):
                     pass
                 self._touch = None
             touch.grab(self)
-            self._touch   = touch
+            self._touch = touch
             self._pressed = True
             self._redraw()
             return True
@@ -419,7 +449,7 @@ class IconButton(Button):
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             touch.ungrab(self)
-            self._touch   = None
+            self._touch = None
             self._pressed = False
             self._redraw()
             if self.collide_point(*touch.pos):
@@ -489,13 +519,14 @@ class StartPauseButton(IconButton):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._playing = False
-        self._img_play  = None
+        self._img_play = None
         self._img_pause = None
-        src_play  = os.path.join(_asset_dir(), 'play.png')
+        src_play = os.path.join(_asset_dir(), 'play.png')
         src_pause = os.path.join(_asset_dir(), 'pause.png')
         for path, label in ((src_play, 'play'), (src_pause, 'pause')):
             if not os.path.exists(path):
-                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+                print('ICON', label, path,
+                      'MISSING — place a 256x256 RGBA PNG there')
         if os.path.exists(src_play):
             self._img_play = KivyImage(source=src_play, allow_stretch=True,
                                        keep_ratio=True, size_hint=(None, None),
@@ -511,21 +542,21 @@ class StartPauseButton(IconButton):
         self._playing = val
         # Toggle opacity only — never swap .source at runtime (unreliable on Android)
         if self._img_play:
-            self._img_play.opacity  = 0   if val else 1.0
+            self._img_play.opacity = 0 if val else 1.0
         if self._img_pause:
             self._img_pause.opacity = 1.0 if val else 0
         self._redraw()
 
     def _draw_icon(self):
         w, h = self.size
-        sz  = min(w, h) * 0.65
+        sz = min(w, h) * 0.65
         pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
         if self._img_play:
-            self._img_play.size  = (sz, sz)
-            self._img_play.pos   = pos
+            self._img_play.size = (sz, sz)
+            self._img_play.pos = pos
         if self._img_pause:
             self._img_pause.size = (sz, sz)
-            self._img_pause.pos  = pos
+            self._img_pause.pos = pos
 
 
 # ── UNDO / REDO toggle button ─────────────────────────────────────────────────
@@ -541,7 +572,8 @@ class UndoRedoButton(IconButton):
         src_redo = os.path.join(_asset_dir(), 'redo.png')
         for path, label in ((src_undo, 'undo'), (src_redo, 'redo')):
             if not os.path.exists(path):
-                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+                print('ICON', label, path,
+                      'MISSING — place a 256x256 RGBA PNG there')
         if os.path.exists(src_undo):
             self._img_undo = KivyImage(source=src_undo, allow_stretch=True,
                                        keep_ratio=True, size_hint=(None, None),
@@ -568,12 +600,14 @@ class UndoRedoButton(IconButton):
 
     def _draw_icon(self):
         w, h = self.size
-        sz  = min(w, h) * 0.65
+        sz = min(w, h) * 0.65
         pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
         if self._img_undo is not None:
-            self._img_undo.size = (sz, sz); self._img_undo.pos = pos
+            self._img_undo.size = (sz, sz)
+            self._img_undo.pos = pos
         if self._img_redo is not None:
-            self._img_redo.size = (sz, sz); self._img_redo.pos = pos
+            self._img_redo.size = (sz, sz)
+            self._img_redo.pos = pos
         if self._img_undo is not None or self._img_redo is not None:
             return
         # Fallback vector if both PNGs missing
@@ -581,15 +615,15 @@ class UndoRedoButton(IconButton):
         if w < 4 or h < 4:
             return
         cx, cy = self.x + w / 2, self.y + h / 2
-        r   = min(w, h) * 0.22
-        lw  = max(2.0, min(w, h) * 0.05)
+        r = min(w, h) * 0.22
+        lw = max(2.0, min(w, h) * 0.05)
         alpha = 0.95 if self._mode else 0.25
-        flip  = -1 if self._mode == 'redo' else 1
+        flip = -1 if self._mode == 'redo' else 1
         start_deg, tip_deg = 485, 215
         with self.canvas.after:
             Color(1, 1, 1, alpha)
             Line(circle=(cx, cy, r, tip_deg, start_deg), width=lw, cap='round')
-            ang  = math.radians(tip_deg)
+            ang = math.radians(tip_deg)
             tipx = cx + flip * r * math.cos(ang)
             tipy = cy + r * math.sin(ang)
             head = r * 0.95
@@ -605,18 +639,19 @@ class LockButton(IconButton):
     """Shows lock.png when unlocked, unlock.png when locked."""
 
     _COL_UNLOCKED = (0.20, 0.45, 0.65, 1)
-    _COL_LOCKED   = (0.65, 0.35, 0.10, 1)
+    _COL_LOCKED = (0.65, 0.35, 0.10, 1)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._is_locked = False
-        self._img_lock   = None
+        self._img_lock = None
         self._img_unlock = None
-        src_lock   = os.path.join(_asset_dir(), 'lock.png')
+        src_lock = os.path.join(_asset_dir(), 'lock.png')
         src_unlock = os.path.join(_asset_dir(), 'unlock.png')
         for path, label in ((src_lock, 'lock'), (src_unlock, 'unlock')):
             if not os.path.exists(path):
-                print('ICON', label, path, 'MISSING — place a 256x256 RGBA PNG there')
+                print('ICON', label, path,
+                      'MISSING — place a 256x256 RGBA PNG there')
         if os.path.exists(src_lock):
             self._img_lock = KivyImage(source=src_lock, allow_stretch=True,
                                        keep_ratio=True, size_hint=(None, None),
@@ -635,7 +670,7 @@ class LockButton(IconButton):
 
     def _update_visual(self):
         if self._img_lock:
-            self._img_lock.opacity   = 0   if self._is_locked else 1.0
+            self._img_lock.opacity = 0 if self._is_locked else 1.0
         if self._img_unlock:
             self._img_unlock.opacity = 1.0 if self._is_locked else 0
         self.BG = self._COL_LOCKED if self._is_locked else self._COL_UNLOCKED
@@ -643,12 +678,14 @@ class LockButton(IconButton):
 
     def _draw_icon(self):
         w, h = self.size
-        sz  = min(w, h) * 0.60
+        sz = min(w, h) * 0.60
         pos = (self.x + (w - sz) / 2, self.y + (h - sz) / 2)
         if self._img_lock:
-            self._img_lock.size = (sz, sz); self._img_lock.pos = pos
+            self._img_lock.size = (sz, sz)
+            self._img_lock.pos = pos
         if self._img_unlock:
-            self._img_unlock.size = (sz, sz); self._img_unlock.pos = pos
+            self._img_unlock.size = (sz, sz)
+            self._img_unlock.pos = pos
         if self._img_lock is not None or self._img_unlock is not None:
             return
         # Fallback vector padlock
@@ -656,7 +693,7 @@ class LockButton(IconButton):
         if w < 4 or h < 4:
             return
         cx, cy = self.x + w / 2, self.y + h / 2
-        s  = min(w, h) * 0.0032
+        s = min(w, h) * 0.0032
         lw = max(1.8, min(w, h) * 0.045)
         bw, bh = 28*s, 22*s
         with self.canvas.after:
@@ -664,7 +701,8 @@ class LockButton(IconButton):
             if self._is_locked:
                 Line(circle=(cx, cy + 10*s, 14*s, 0, 180), width=lw, cap='round')
             else:
-                Line(circle=(cx + 14*s, cy + 10*s, 14*s, 60, 180), width=lw, cap='round')
+                Line(circle=(cx + 14*s, cy + 10*s, 14 *
+                     s, 60, 180), width=lw, cap='round')
             Line(rounded_rectangle=(cx - bw/2, cy - 18*s, bw, 26*s, 4*s), width=lw)
             Ellipse(pos=(cx - 5*s, cy - 5*s), size=(10*s, 10*s))
             Line(points=[cx, cy - 5*s, cx, cy - 14*s], width=lw*0.8)
@@ -679,16 +717,7 @@ _ICON_FILES = {
 
 
 def _asset_dir():
-    candidates = []
-    # FIX (desktop packaging): PyInstaller's --onefile mode extracts
-    # bundled data (assets/) into a temporary folder at runtime, exposed
-    # via sys._MEIPASS — without checking this first, a packaged .exe
-    # would silently fall back to the vector-drawn icons instead of the
-    # real PNGs, even though they were bundled correctly.
-    meipass = getattr(sys, '_MEIPASS', None)
-    if meipass:
-        candidates.append(os.path.join(meipass, 'assets'))
-    candidates += [
+    candidates = [
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets'),
         os.path.join(os.getcwd(), 'assets'),
         os.path.join(os.path.expanduser('~'), 'assets'),
@@ -734,9 +763,9 @@ class SquareVehicleButton(Button):
         self._timeout_ev = None
         cr = circle_color
         self._col_normal = (None, cr)
-        self._col_press  = ((1, 1, 1, 0.9),
-                            (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
-        self._r    = self.CORNER_RADIUS
+        self._col_press = ((1, 1, 1, 0.9),
+                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r = self.CORNER_RADIUS
         self._ring = 6
         self.bind(pos=self._redraw, size=self._redraw)
 
@@ -759,8 +788,8 @@ class SquareVehicleButton(Button):
         if self._img:
             icon_sz = min(w, icon_zone_h) * 0.82
             self._img.size = (icon_sz, icon_sz)
-            self._img.pos  = (self.x + (w - icon_sz) / 2,
-                              icon_zone_y + (icon_zone_h - icon_sz) / 2)
+            self._img.pos = (self.x + (w - icon_sz) / 2,
+                             icon_zone_y + (icon_zone_h - icon_sz) / 2)
         else:
             self.canvas.after.clear()
             cx = self.x + w / 2
@@ -770,9 +799,9 @@ class SquareVehicleButton(Button):
                 draw_icon(self.canvas.after, self.key, cx, cy, sz)
         cr = self.circle_color
         self._col_normal = (None, cr)
-        self._col_press  = ((1, 1, 1, 0.9),
-                            (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
-        self._r    = self.CORNER_RADIUS
+        self._col_press = ((1, 1, 1, 0.9),
+                           (cr[0]*0.38, cr[1]*0.38, cr[2]*0.38, cr[3]))
+        self._r = self.CORNER_RADIUS
         self._ring = 6
         self._redraw_bg()
 
@@ -797,7 +826,7 @@ class SquareVehicleButton(Button):
             if self._pressed:
                 self._clear_press()
             touch.grab(self)
-            self._touch   = touch
+            self._touch = touch
             self._pressed = True
             self._redraw_bg()
             self._arm_timeout()
@@ -808,7 +837,7 @@ class SquareVehicleButton(Button):
         if touch.grab_current is self:
             touch.ungrab(self)
             self._cancel_timeout()
-            self._touch   = None
+            self._touch = None
             self._pressed = False
             self._redraw_bg()
             if self.collide_point(*touch.pos):
@@ -818,7 +847,8 @@ class SquareVehicleButton(Button):
 
     def _arm_timeout(self):
         self._cancel_timeout()
-        self._timeout_ev = Clock.schedule_once(self._force_release, self.PRESS_TIMEOUT)
+        self._timeout_ev = Clock.schedule_once(
+            self._force_release, self.PRESS_TIMEOUT)
 
     def _cancel_timeout(self):
         if getattr(self, '_timeout_ev', None):
@@ -835,7 +865,7 @@ class SquareVehicleButton(Button):
                 self._touch.ungrab(self)
             except Exception:
                 pass
-        self._touch   = None
+        self._touch = None
         self._pressed = False
         self._redraw_bg()
 
@@ -868,9 +898,9 @@ class SquareGridCluster(GridLayout):
         grid_keys = GRID_KEYS_LEFT if corner == 'left' else GRID_KEYS_RIGHT
         super().__init__(cols=len(grid_keys[0]), rows=len(grid_keys),
                          spacing=self.SEP, padding=0, **kwargs)
-        self.on_tap    = on_tap
-        self.corner    = corner
-        self._buttons  = {}
+        self.on_tap = on_tap
+        self.corner = corner
+        self._buttons = {}
         self._is_locked = is_locked or (lambda: False)
 
         for row in grid_keys:
@@ -924,8 +954,9 @@ class SquareGridCluster(GridLayout):
             Color(0.13, 0.14, 0.18, 1)
             rect = Rectangle(pos=filler.pos, size=filler.size)
         filler._rect = rect
+
         def _upd(w, *a):
-            w._rect.pos  = w.pos
+            w._rect.pos = w.pos
             w._rect.size = w.size
         filler.bind(pos=_upd, size=_upd)
         return filler
@@ -955,13 +986,6 @@ class SummaryChip(Button):
     # legitimate fast repeated taps.
     BOUNCE_WINDOW = 0.06
 
-    # FIX: same safety net SquareVehicleButton already has — if a touch's
-    # up/cancel event is ever dropped by the platform (a real, occasional
-    # Android touch-driver issue) after we've grabbed it, this widget would
-    # otherwise stay stuck looking pressed forever with no way to recover.
-    # Force-clear after 1s if no release arrives.
-    PRESS_TIMEOUT = 1.0
-
     def __init__(self, chip_color, **kwargs):
         self._chip_color = chip_color
         self._dim = tuple(max(0, c*0.35) if i < 3 else c
@@ -969,7 +993,6 @@ class SummaryChip(Button):
         self._flash_ev = None
         self._touch = None
         self._last_up_t = 0.0
-        self._timeout_ev = None
         # FIX: background_normal was blanked but background_down (and the
         # disabled variants) were left at Kivy's default atlas images.
         # Every tap flipped self.state to 'down', which made Kivy load and
@@ -990,30 +1013,6 @@ class SummaryChip(Button):
         self.background_color = list(self._dim)
         self._flash_ev = Clock.schedule_once(
             lambda dt: setattr(self, 'background_color', list(self._chip_color)), 0.08)
-
-    def _arm_timeout(self):
-        self._cancel_timeout()
-        self._timeout_ev = Clock.schedule_once(self._force_release, self.PRESS_TIMEOUT)
-
-    def _cancel_timeout(self):
-        if self._timeout_ev:
-            self._timeout_ev.cancel()
-            self._timeout_ev = None
-
-    def _force_release(self, dt):
-        # A grabbed touch never sent us a release within PRESS_TIMEOUT —
-        # treat it as abandoned. Just clean up the visual/grab state,
-        # don't dispatch on_release (we can't know if it was a genuine
-        # completed tap, so don't risk a phantom decrement).
-        if self._touch is not None:
-            try:
-                self._touch.ungrab(self)
-            except Exception:
-                pass
-            self._touch = None
-        self.state = 'normal'
-        self._last_up_t = time.monotonic()
-        self.background_color = list(self._chip_color)
 
     def on_touch_down(self, touch):
         if self.disabled:
@@ -1043,7 +1042,6 @@ class SummaryChip(Button):
             touch.grab(self)
             self._touch = touch
             self.state = 'down'
-            self._arm_timeout()
             # FIX: give immediate visual feedback the instant the finger
             # touches down, same as SquareVehicleButton's press-darken —
             # previously nothing changed on screen until on_touch_up (and
@@ -1060,7 +1058,6 @@ class SummaryChip(Button):
     def on_touch_up(self, touch):
         if touch.grab_current is self:
             touch.ungrab(self)
-            self._cancel_timeout()
             self._touch = None
             self._last_up_t = time.monotonic()
             self.state = 'normal'
@@ -1086,9 +1083,9 @@ class JunctionSummary(BoxLayout):
         kwargs.setdefault('spacing', 6)
         kwargs.setdefault('padding', [8, 6, 8, 6])
         super().__init__(**kwargs)
-        self.on_minus  = on_minus
+        self.on_minus = on_minus
         self.is_locked = is_locked or (lambda: False)
-        self.counts    = {k: 0 for k in VEHICLES}
+        self.counts = {k: 0 for k in VEHICLES}
         self.chips = {}
         for key in (order or SUMMARY_ORDER_LEFT):
             short, color = VEHICLES[key]
@@ -1143,11 +1140,11 @@ BASE_FONT = 48
 class TimerWidget(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(orientation='vertical', spacing=6, **kwargs)
-        self._duration  = DEFAULT_TIMER
+        self._duration = DEFAULT_TIMER
         self._remaining = DEFAULT_TIMER
-        self._running   = False
-        self._tick_ev   = None
-        self._alert_ev  = None
+        self._running = False
+        self._tick_ev = None
+        self._alert_ev = None
         self._alert_idx = 0
         self._ext_btn_ss = None
         # FIX: re-entrancy guard so a double-fired tap on SET can't stack a
@@ -1159,7 +1156,7 @@ class TimerWidget(BoxLayout):
         # anchor the countdown to a wall-clock deadline. Whenever the app
         # resumes, the remaining time is recomputed from real elapsed time
         # rather than from however many ticks happened to fire.
-        self._deadline      = None   # time.time() value when countdown hits 0, while running
+        self._deadline = None   # time.time() value when countdown hits 0, while running
         self._pending_alarm = False  # timer expired while backgrounded; alarm not yet played
 
         self.lbl = Label(text=self._fmt(DEFAULT_TIMER), font_size=BASE_FONT,
@@ -1180,10 +1177,10 @@ class TimerWidget(BoxLayout):
 
     def set_locked(self, locked):
         alpha = 0.25 if locked else 1.0
-        self._btn_set.opacity  = alpha
+        self._btn_set.opacity = alpha
         self._btn_set.disabled = locked
         if self._ext_btn_ss:
-            self._ext_btn_ss.opacity  = alpha
+            self._ext_btn_ss.opacity = alpha
             self._ext_btn_ss.disabled = locked
 
     def _mk(self, t, bg):
@@ -1210,7 +1207,7 @@ class TimerWidget(BoxLayout):
         self._running = True
         self._set_btn_state(True)
         self._stop_alert()
-        self.lbl.color     = (0.55, 0.92, 0.55, 1)
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
         # FIX: anchor to a wall-clock deadline instead of just counting
         # ticks, so the countdown stays correct across a background/
@@ -1225,7 +1222,7 @@ class TimerWidget(BoxLayout):
             self._tick_ev.cancel()
         if self._deadline is not None:
             self._remaining = max(0, self._deadline - time.time())
-            self._deadline  = None
+            self._deadline = None
 
     def _tick(self, dt):
         if self._deadline is None:
@@ -1233,12 +1230,12 @@ class TimerWidget(BoxLayout):
         remaining = self._deadline - time.time()
         if remaining <= 0:
             self._remaining = 0
-            self.lbl.text   = self._fmt(0)
+            self.lbl.text = self._fmt(0)
             self._pause()
             self._expire()
         else:
             self._remaining = remaining
-            self.lbl.text   = self._fmt(remaining)
+            self.lbl.text = self._fmt(remaining)
 
     def _expire(self):
         # FIX: don't blast the alarm sound while the app is minimised —
@@ -1259,7 +1256,7 @@ class TimerWidget(BoxLayout):
             remaining = self._deadline - time.time()
             if remaining <= 0:
                 self._remaining = 0
-                self.lbl.text   = self._fmt(0)
+                self.lbl.text = self._fmt(0)
                 self._pause()
                 self._pending_alarm = False
                 self._alert()
@@ -1273,16 +1270,16 @@ class TimerWidget(BoxLayout):
     def _alert(self):
         play_alarm()
         self._alert_idx = 0
-        self._alert_ev  = Clock.schedule_interval(self._alert_step, 0.25)
+        self._alert_ev = Clock.schedule_interval(self._alert_step, 0.25)
 
     def _alert_step(self, dt):
         self._alert_idx += 1
         if self._alert_idx % 2 == 0:
             self.lbl.font_size = BASE_FONT * 1.35
-            self.lbl.color     = (1, 0.08, 0.08, 1)
+            self.lbl.color = (1, 0.08, 0.08, 1)
         else:
             self.lbl.font_size = BASE_FONT * 0.85
-            self.lbl.color     = (0.75, 0.05, 0.05, 1)
+            self.lbl.color = (0.75, 0.05, 0.05, 1)
 
     def _stop_alert(self):
         if self._alert_ev:
@@ -1292,11 +1289,11 @@ class TimerWidget(BoxLayout):
     def _reset_timer(self, *a):
         self._pause()
         self._stop_alert()
-        self._remaining     = self._duration
-        self._deadline      = None
+        self._remaining = self._duration
+        self._deadline = None
         self._pending_alarm = False
-        self.lbl.text      = self._fmt(self._remaining)
-        self.lbl.color     = (0.55, 0.92, 0.55, 1)
+        self.lbl.text = self._fmt(self._remaining)
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
 
     def reset_to_default(self): self._reset_timer()
@@ -1304,7 +1301,7 @@ class TimerWidget(BoxLayout):
     def stop_alert(self):
         self._stop_alert()
         self._pending_alarm = False
-        self.lbl.color     = (0.55, 0.92, 0.55, 1)
+        self.lbl.color = (0.55, 0.92, 0.55, 1)
         self.lbl.font_size = BASE_FONT
 
     def _open_set(self, *a):
@@ -1333,16 +1330,21 @@ class TimerWidget(BoxLayout):
                              background_color=(0.15, 0.17, 0.21, 1),
                              cursor_color=(1, 1, 1, 1), size_hint=(1, 1),
                              multiline=False, halign='center', input_filter='int')
-        inp_m = _inp("MM"); inp_s = _inp("SS")
+        inp_m = _inp("MM")
+        inp_s = _inp("SS")
         colon = Label(text=":", font_size=36, bold=True, color=(1, 1, 1, 1),
                       size_hint=(None, 1), width=28)
-        time_row.add_widget(inp_m); time_row.add_widget(colon); time_row.add_widget(inp_s)
+        time_row.add_widget(inp_m)
+        time_row.add_widget(colon)
+        time_row.add_widget(inp_s)
         content.add_widget(time_row)
 
-        btns   = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, None), height=56)
-        cancel  = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
+        btns = BoxLayout(orientation='horizontal', spacing=10,
+                         size_hint=(1, None), height=56)
+        cancel = self._mk("Cancel", (0.30, 0.32, 0.38, 1))
         confirm = self._mk("Set",    (0.20, 0.55, 0.30, 1))
-        btns.add_widget(cancel); btns.add_widget(confirm)
+        btns.add_widget(cancel)
+        btns.add_widget(confirm)
         content.add_widget(btns)
 
         # FIX: auto_dismiss=False — prevents the first tap from landing on
@@ -1357,22 +1359,24 @@ class TimerWidget(BoxLayout):
                       auto_dismiss=False)
 
         def _cancel(*a):
-            self._duration  = prev_duration
+            self._duration = prev_duration
             self._remaining = prev_duration
-            self.lbl.text   = self._fmt(prev_duration)
+            self.lbl.text = self._fmt(prev_duration)
             popup.dismiss()
 
         def _apply(*a):
             try:
-                m_val = int(inp_m.text.strip()) if inp_m.text.strip() else prev_m
-                s_val = int(inp_s.text.strip()) if inp_s.text.strip() else prev_s
+                m_val = int(inp_m.text.strip()
+                            ) if inp_m.text.strip() else prev_m
+                s_val = int(inp_s.text.strip()
+                            ) if inp_s.text.strip() else prev_s
                 s_val = max(0, min(59, s_val))
                 self._duration = max(1, m_val*60 + s_val)
             except Exception:
                 self._duration = prev_duration
-            self._remaining    = self._duration
-            self.lbl.text      = self._fmt(self._remaining)
-            self.lbl.color     = (0.55, 0.92, 0.55, 1)
+            self._remaining = self._duration
+            self.lbl.text = self._fmt(self._remaining)
+            self.lbl.color = (0.55, 0.92, 0.55, 1)
             self.lbl.font_size = BASE_FONT
             self._stop_alert()
             popup.dismiss()
@@ -1381,7 +1385,8 @@ class TimerWidget(BoxLayout):
         confirm.bind(on_release=_apply)
         # FIX: clear the re-entrancy guard once the popup actually closes,
         # whichever button (or code path) triggered the dismiss.
-        popup.bind(on_dismiss=lambda *a: setattr(self, '_set_popup_open', False))
+        popup.bind(on_dismiss=lambda *a: setattr(self,
+                   '_set_popup_open', False))
         popup.open()
 
 
@@ -1417,13 +1422,13 @@ class LoadingScreen(FloatLayout):
                                        pos_hint={'center_x': 0.5, 'center_y': 0.16})
         self.add_widget(self._bar_widget)
         self._bar_progress = 0.0
-        self._target       = 0.0
+        self._target = 0.0
         self._bar_ev = Clock.schedule_interval(self._animate, 0.03)
         self._bar_widget.bind(pos=self._draw_bar, size=self._draw_bar)
         Clock.schedule_once(self._step1, 0.3)
 
     def _upd_bg(self, *a):
-        self._bg.pos  = self.pos
+        self._bg.pos = self.pos
         self._bg.size = self.size
 
     def _draw_bar(self, *a):
@@ -1539,106 +1544,32 @@ class RootLayout(FloatLayout):
 
         self.bind(size=self._layout)
         self.reset_btn.bind(size=self._layout)
-        self.j1_summary.chips['MOTO'][0].bind(pos=self._layout, size=self._layout)
-        self.j2_summary.chips['CAR'][0].bind(pos=self._layout,  size=self._layout)
+        self.j1_summary.chips['MOTO'][0].bind(
+            pos=self._layout, size=self._layout)
+        self.j2_summary.chips['CAR'][0].bind(
+            pos=self._layout,  size=self._layout)
         self._load()
-
-        # FIX (desktop keyboard support): lets the surveyor keep both
-        # hands on the keyboard while watching video footage, instead of
-        # needing the mouse. Mirrors the screen layout — left hand covers
-        # the left junction, right hand covers the right junction — so
-        # each hand independently logs whichever junction it's watching.
-        Window.bind(on_key_down=self._on_keyboard)
-
-    # J1 (left junction, left hand): Q W E R T
-    # J2 (right junction, right hand): U I O P [
-    # Hold Shift with any of the above to decrement instead of increment.
-    _KEYS_J1 = {'q': 'CAR', 'w': 'MOTO', 'e': 'LRY', 'r': 'LLRY', 't': 'BUS'}
-    _KEYS_J2 = {'u': 'CAR', 'i': 'MOTO', 'o': 'LRY', 'p': 'LLRY', '[': 'BUS'}
-
-    def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
-        ch = (codepoint or '').lower()
-        shift = 'shift' in modifiers
-
-        if ch in self._KEYS_J1:
-            if self._locked:
-                return True
-            vehicle = self._KEYS_J1[ch]
-            if shift:
-                self.j1_summary._minus(vehicle)
-            else:
-                self._j1_tap(vehicle)
-            return True
-
-        if ch in self._KEYS_J2:
-            if self._locked:
-                return True
-            vehicle = self._KEYS_J2[ch]
-            if shift:
-                self.j2_summary._minus(vehicle)
-            else:
-                self._j2_tap(vehicle)
-            return True
-
-        if ch == ' ' or key == 32:
-            # Space: start/pause the timer — same action as the on-screen
-            # play/pause button.
-            if self._locked:
-                return True
-            play_startpause()
-            self.timer._toggle()
-            return True
-
-        if ch == 'z':
-            # Undo/redo — whichever mode the on-screen button is
-            # currently showing.
-            if self._locked:
-                return True
-            if hasattr(self.j1_cluster, '_undo_redo_btn'):
-                mode = self.j1_cluster._undo_redo_btn._mode
-                if mode == 'undo':
-                    haptic_tap(); play_startpause(); self._do_undo()
-                elif mode == 'redo':
-                    haptic_tap(); play_startpause(); self._do_redo()
-            return True
-
-        if ch == 'l':
-            # Lock/unlock — always allowed, even while locked (it's the
-            # only way to unlock again from the keyboard).
-            self._toggle_lock()
-            return True
-
-        if key == 8:
-            # Backspace: Reset All — goes through the same confirmation
-            # popup as the on-screen button, so it can't be triggered by
-            # accident.
-            if self._locked:
-                return True
-            self._confirm_reset()
-            return True
-
-        return False
 
     def _layout(self, *a):
         W, H = self.size
         cluster_h = H - TOP_H
 
-        moto_chip    = self.j1_summary.chips['MOTO'][0]
-        left_grid_w  = moto_chip.right if moto_chip.width > 1 else W*0.42
+        moto_chip = self.j1_summary.chips['MOTO'][0]
+        left_grid_w = moto_chip.right if moto_chip.width > 1 else W*0.42
 
-        car_chip     = self.j2_summary.chips['CAR'][0]
+        car_chip = self.j2_summary.chips['CAR'][0]
         right_grid_x = car_chip.x if car_chip.width > 1 else W*0.58
         right_grid_w = W - right_grid_x
 
         self.j1_cluster.size = (left_grid_w, cluster_h)
-        self.j1_cluster.pos  = (0, 0)
+        self.j1_cluster.pos = (0, 0)
         self.j2_cluster.size = (right_grid_w, cluster_h)
-        self.j2_cluster.pos  = (right_grid_x, 0)
+        self.j2_cluster.pos = (right_grid_x, 0)
 
-        timer_w      = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
-        total_box_h  = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
+        timer_w = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
+        total_box_h = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
         self.timer_box.size = (timer_w, total_box_h)
-        self.timer_box.pos  = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
+        self.timer_box.pos = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
 
     def _j1_tap(self, key):
         if self._locked:
@@ -1674,34 +1605,34 @@ class RootLayout(FloatLayout):
         if self._locked:
             self.timer._pause()
             self.reset_btn.disabled = True
-            self.reset_btn.opacity  = 0.25
+            self.reset_btn.opacity = 0.25
             self.timer.set_locked(True)
             if hasattr(self.j1_cluster, '_undo_redo_btn'):
                 self.j1_cluster._undo_redo_btn.disabled = True
-                self.j1_cluster._undo_redo_btn.opacity  = 0.25
+                self.j1_cluster._undo_redo_btn.opacity = 0.25
             for summary in (self.j1_summary, self.j2_summary):
                 for btn, _ in summary.chips.values():
                     btn.disabled = True
-                    btn.opacity  = 0.35
+                    btn.opacity = 0.35
             for cluster in (self.j1_cluster, self.j2_cluster):
                 for btn in cluster._buttons.values():
                     btn.disabled = True
-                    btn.opacity  = 0.35
+                    btn.opacity = 0.35
         else:
             self.reset_btn.disabled = False
-            self.reset_btn.opacity  = 1.0
+            self.reset_btn.opacity = 1.0
             self.timer.set_locked(False)
             if hasattr(self.j1_cluster, '_undo_redo_btn'):
                 self.j1_cluster._undo_redo_btn.disabled = False
-                self.j1_cluster._undo_redo_btn.opacity  = 1.0
+                self.j1_cluster._undo_redo_btn.opacity = 1.0
             for summary in (self.j1_summary, self.j2_summary):
                 for btn, _ in summary.chips.values():
                     btn.disabled = False
-                    btn.opacity  = 1.0
+                    btn.opacity = 1.0
             for cluster in (self.j1_cluster, self.j2_cluster):
                 for btn in cluster._buttons.values():
                     btn.disabled = False
-                    btn.opacity  = 1.0
+                    btn.opacity = 1.0
 
     def _save(self, *a):
         if hasattr(self, '_save_ev') and self._save_ev:
@@ -1712,6 +1643,7 @@ class RootLayout(FloatLayout):
         import threading
         data = {'j1': self.j1_summary.get_counts(),
                 'j2': self.j2_summary.get_counts()}
+
         def _write():
             try:
                 with open(SAVE_FILE, 'w') as f:
@@ -1748,7 +1680,7 @@ class RootLayout(FloatLayout):
             # FIX: SafeButton instead of plain Button (see SafeButton docstring).
             return SafeButton(text=t, font_size=18, bold=True, color=(1, 1, 1, 1),
                               background_normal='', background_color=bg, size_hint=(1, 1))
-        cancel  = _mk("Cancel", (0.30, 0.32, 0.38, 1))
+        cancel = _mk("Cancel", (0.30, 0.32, 0.38, 1))
         confirm = _mk("Reset",  (0.75, 0.20, 0.20, 1))
         btns.add_widget(cancel)
         btns.add_widget(confirm)
@@ -1764,7 +1696,8 @@ class RootLayout(FloatLayout):
         cancel.bind(on_release=lambda *a: popup.dismiss())
         confirm.bind(on_release=lambda *a: (self._do_reset(), popup.dismiss()))
         # FIX: clear the re-entrancy guard once the popup actually closes.
-        popup.bind(on_dismiss=lambda *a: setattr(self, '_reset_popup_open', False))
+        popup.bind(on_dismiss=lambda *a: setattr(self,
+                   '_reset_popup_open', False))
         popup.open()
 
     def _do_reset(self):
