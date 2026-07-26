@@ -846,6 +846,15 @@ class SquareVehicleButton(Button):
         self._pressed = False
         self._redraw_bg()
 
+    def flash_press(self, duration=0.12):
+        """Briefly show the same darken/ring press feedback a real touch
+        gives, without an actual touch — used for keyboard-triggered
+        increments so they get the same visual feedback as tapping."""
+        self._pressed = True
+        self._redraw_bg()
+        Clock.schedule_once(lambda dt: (
+            setattr(self, '_pressed', False), self._redraw_bg()), duration)
+
 
 # ── Grid cluster ──────────────────────────────────────────────────────────────
 GRID_KEYS_LEFT = [
@@ -1379,9 +1388,53 @@ class TimerWidget(BoxLayout):
 
         cancel.bind(on_release=_cancel)
         confirm.bind(on_release=_apply)
-        # FIX: clear the re-entrancy guard once the popup actually closes,
-        # whichever button (or code path) triggered the dismiss.
-        popup.bind(on_dismiss=lambda *a: setattr(self, '_set_popup_open', False))
+
+        # FIX: keyboard navigation for this popup. Tab cycles focus
+        # through MM -> SS -> Cancel -> Set -> back to MM; Enter activates
+        # Set (from anywhere, matching normal form behaviour) or whichever
+        # button is highlighted; Escape cancels (same as clicking Cancel).
+        # Only Tab/Enter/Escape are consumed here — every other key
+        # (digits, backspace while typing, etc.) returns False and falls
+        # through untouched to the focused TextInput's own normal typing,
+        # so MM/SS editing keeps working exactly as before.
+        tab_order = [inp_m, inp_s, cancel, confirm]
+        focus_idx = {'i': 0}
+
+        def _set_focus(idx):
+            focus_idx['i'] = idx % len(tab_order)
+            for i, w in enumerate(tab_order):
+                is_sel = (i == focus_idx['i'])
+                if isinstance(w, TextInput):
+                    w.focus = is_sel
+                else:
+                    w.opacity = 1.0 if is_sel else 0.55
+
+        def _popup_keydown(window, key, scancode, codepoint, modifiers):
+            if key == 9:  # Tab
+                _set_focus(focus_idx['i'] + 1)
+                return True
+            if key in (13, 271):  # Enter / numpad Enter
+                current = tab_order[focus_idx['i']]
+                if isinstance(current, TextInput):
+                    confirm.dispatch('on_release')
+                else:
+                    current.dispatch('on_release')
+                return True
+            if key == 27:  # Escape — cancels, same as clicking Cancel
+                _cancel()
+                return True
+            return False
+
+        Window.bind(on_key_down=_popup_keydown)
+        _set_focus(0)  # start on the MM field, ready to type immediately
+
+        def _on_dismiss(*a):
+            # FIX: clear the re-entrancy guard once the popup actually
+            # closes, and unbind the popup-only keyboard handler.
+            Window.unbind(on_key_down=_popup_keydown)
+            self._set_popup_open = False
+
+        popup.bind(on_dismiss=_on_dismiss)
         popup.open()
 
 
@@ -1484,6 +1537,8 @@ class RootLayout(FloatLayout):
         # FIX: re-entrancy guard so a double-fired tap on RESET ALL can't
         # stack a second confirm-reset popup underneath the first.
         self._reset_popup_open = False
+        # FIX: tracks whether the keyboard-shortcuts help popup is open.
+        self._help_popup_open = False
 
         top = BoxLayout(size_hint=(1, None), height=TOP_H,
                         pos_hint={'x': 0, 'top': 1},
@@ -1550,15 +1605,33 @@ class RootLayout(FloatLayout):
         # each hand independently logs whichever junction it's watching.
         Window.bind(on_key_down=self._on_keyboard)
 
-    # J1 (left junction, left hand): Q W E R T
-    # J2 (right junction, right hand): U I O P [
-    # Hold Shift with any of the above to decrement instead of increment.
-    _KEYS_J1 = {'q': 'CAR', 'w': 'MOTO', 'e': 'LRY', 'r': 'LLRY', 't': 'BUS'}
-    _KEYS_J2 = {'u': 'CAR', 'i': 'MOTO', 'o': 'LRY', 'p': 'LLRY', '[': 'BUS'}
+    # J1 (left junction): W J K O L
+    # J2 (right junction): I D S Q A
+    _KEYS_J1 = {'w': 'CAR', 'j': 'MOTO', 'k': 'BUS', 'o': 'LRY', 'l': 'LLRY'}
+    _KEYS_J2 = {'i': 'CAR', 'd': 'MOTO', 's': 'BUS', 'q': 'LRY', 'a': 'LLRY'}
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
+        # FIX: while a popup is open (Set Timer's MM/SS text fields, the
+        # Reset All confirmation, or this help popup), these shortcuts
+        # must stand down — otherwise typing a digit or pressing Backspace
+        # to edit the MM/SS fields would get hijacked (e.g. Backspace
+        # would try to open Reset All instead of deleting a character).
+        if self.timer._set_popup_open or self._reset_popup_open:
+            return False
+
         ch = (codepoint or '').lower()
         shift = 'shift' in modifiers
+
+        if self._help_popup_open:
+            # Only Escape/Enter close the help popup — everything else is
+            # ignored while it's up.
+            if key in (27, 13, 271):
+                self._help_popup.dismiss()
+            return True
+
+        if ch == '?' or key == 282:  # '?' or F1
+            self._show_keyboard_help()
+            return True
 
         if ch in self._KEYS_J1:
             if self._locked:
@@ -1568,6 +1641,18 @@ class RootLayout(FloatLayout):
                 self.j1_summary._minus(vehicle)
             else:
                 self._j1_tap(vehicle)
+                # FIX: a real touch on this button gets haptic + sound via
+                # SquareGridCluster._tap — but keyboard shortcuts call
+                # _j1_tap directly, bypassing that entirely, so keyboard
+                # increments were silent/feedback-less compared to
+                # decrement (whose _minus already includes all of this).
+                # Match it here for full parity.
+                btn = self.j1_cluster._buttons.get(vehicle)
+                if btn:
+                    btn.flash_press()
+                import threading
+                threading.Thread(target=lambda: (
+                    haptic_tap(), play_tap()), daemon=True).start()
             return True
 
         if ch in self._KEYS_J2:
@@ -1578,6 +1663,12 @@ class RootLayout(FloatLayout):
                 self.j2_summary._minus(vehicle)
             else:
                 self._j2_tap(vehicle)
+                btn = self.j2_cluster._buttons.get(vehicle)
+                if btn:
+                    btn.flash_press()
+                import threading
+                threading.Thread(target=lambda: (
+                    haptic_tap(), play_tap()), daemon=True).start()
             return True
 
         if ch == ' ' or key == 32:
@@ -1589,35 +1680,106 @@ class RootLayout(FloatLayout):
             self.timer._toggle()
             return True
 
-        if ch == 'z':
-            # Undo/redo — whichever mode the on-screen button is
-            # currently showing.
+        if ch == 't':
+            # T: open the Set Timer popup — same as the on-screen SET
+            # button.
             if self._locked:
                 return True
-            if hasattr(self.j1_cluster, '_undo_redo_btn'):
-                mode = self.j1_cluster._undo_redo_btn._mode
-                if mode == 'undo':
-                    haptic_tap(); play_startpause(); self._do_undo()
-                elif mode == 'redo':
-                    haptic_tap(); play_startpause(); self._do_redo()
+            self.timer._open_set()
             return True
 
-        if ch == 'l':
-            # Lock/unlock — always allowed, even while locked (it's the
+        if key == 122 and 'ctrl' in modifiers:
+            # Ctrl+Z: undo. Matched by keycode, not codepoint — Ctrl+letter
+            # combos often don't produce a normal character, so codepoint
+            # can't be relied on here. Safe to call unconditionally —
+            # _do_undo() already no-ops internally if there's nothing to
+            # undo.
+            if self._locked:
+                return True
+            haptic_tap(); play_startpause(); self._do_undo()
+            return True
+
+        if key == 121 and 'ctrl' in modifiers:
+            # Ctrl+Y: redo. Same reasoning and same safety.
+            if self._locked:
+                return True
+            haptic_tap(); play_startpause(); self._do_redo()
+            return True
+
+        if ch == 'x':
+            # X: Lock/unlock — always allowed, even while locked (it's the
             # only way to unlock again from the keyboard).
             self._toggle_lock()
             return True
 
-        if key == 8:
-            # Backspace: Reset All — goes through the same confirmation
-            # popup as the on-screen button, so it can't be triggered by
-            # accident.
+        if key == 27:
+            # Escape: open Reset All's confirmation popup. Once open,
+            # Tab/Enter/Escape navigate and act on it (see _confirm_reset).
             if self._locked:
                 return True
             self._confirm_reset()
             return True
 
         return False
+
+    def _show_keyboard_help(self):
+        # FIX: on-screen keyboard shortcuts reference for desktop use —
+        # triggered by '?' or F1. Read-only, no re-entrancy guard needed
+        # since duplicate opens are harmless here (unlike Reset/Set Timer,
+        # nothing here mutates state).
+        if self._help_popup_open:
+            return
+        self._help_popup_open = True
+
+        rows = [
+            ("W J K O L", "Left junction: Car / Moto / Bus / Lorry / Long-lorry"),
+            ("I D S Q A", "Right junction: Car / Moto / Bus / Lorry / Long-lorry"),
+            ("Shift + any of the above", "Decrement instead of increment"),
+            ("Space", "Start / Pause timer"),
+            ("T", "Open Set Timer"),
+            ("Ctrl+Z", "Undo"),
+            ("Ctrl+Y", "Redo"),
+            ("X", "Lock / Unlock"),
+            ("Esc", "Reset All (Tab/Enter to choose, Esc to cancel)"),
+            ("? or F1", "Show this help"),
+        ]
+
+        content = BoxLayout(orientation='vertical', spacing=10, padding=20)
+        content.add_widget(Label(text="Keyboard Shortcuts", font_size=22, bold=True,
+                                 color=(1, 1, 1, 1), size_hint=(1, None), height=32))
+
+        rows_box = BoxLayout(orientation='vertical', spacing=4, size_hint=(1, 1))
+        for keys, desc in rows:
+            row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=28)
+            row.add_widget(Label(text=keys, font_size=15, bold=True,
+                                 color=(0.55, 0.85, 1.0, 1), halign='left',
+                                 valign='middle', size_hint=(0.38, 1)))
+            row.add_widget(Label(text=desc, font_size=15, color=(0.85, 0.87, 0.90, 1),
+                                 halign='left', valign='middle', size_hint=(0.62, 1)))
+            for lbl in row.children:
+                lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+            rows_box.add_widget(row)
+        content.add_widget(rows_box)
+
+        close_btn = SafeButton(text="Close", font_size=16, bold=True, color=(1, 1, 1, 1),
+                               background_normal='', background_color=(0.25, 0.35, 0.60, 1),
+                               size_hint=(1, None), height=48)
+        content.add_widget(close_btn)
+
+        popup = Popup(title='Help', title_size=20, content=content,
+                      size_hint=(0.7, 0.75),
+                      background_color=(0.14, 0.15, 0.20, 1),
+                      title_color=(1, 1, 1, 1),
+                      separator_color=(0.25, 0.27, 0.32, 1),
+                      auto_dismiss=False)
+        close_btn.bind(on_release=lambda *a: popup.dismiss())
+
+        def _on_dismiss(*a):
+            self._help_popup_open = False
+
+        popup.bind(on_dismiss=_on_dismiss)
+        self._help_popup = popup
+        popup.open()
 
     def _layout(self, *a):
         W, H = self.size
@@ -1763,8 +1925,43 @@ class RootLayout(FloatLayout):
                       auto_dismiss=False)
         cancel.bind(on_release=lambda *a: popup.dismiss())
         confirm.bind(on_release=lambda *a: (self._do_reset(), popup.dismiss()))
-        # FIX: clear the re-entrancy guard once the popup actually closes.
-        popup.bind(on_dismiss=lambda *a: setattr(self, '_reset_popup_open', False))
+
+        # FIX: keyboard navigation while this popup is open — Tab moves
+        # the highlight between Cancel/Reset, Enter activates whichever
+        # is highlighted, Escape cancels. Starts on Cancel (the safe,
+        # non-destructive default) so Enter alone never resets by
+        # accident. Bound only for the popup's lifetime and unbound on
+        # dismiss, so it can never interfere with anything else.
+        choice_buttons = [cancel, confirm]
+        selected = {'idx': 0}
+
+        def _highlight():
+            for i, b in enumerate(choice_buttons):
+                b.opacity = 1.0 if i == selected['idx'] else 0.55
+
+        def _popup_keydown(window, key, scancode, codepoint, modifiers):
+            if key == 9:  # Tab
+                selected['idx'] = 1 - selected['idx']
+                _highlight()
+                return True
+            if key in (13, 271):  # Enter / numpad Enter
+                choice_buttons[selected['idx']].dispatch('on_release')
+                return True
+            if key == 27:  # Escape — cancels, same as clicking Cancel
+                popup.dismiss()
+                return True
+            return True  # swallow everything else while this popup is open
+
+        Window.bind(on_key_down=_popup_keydown)
+        _highlight()
+
+        def _on_dismiss(*a):
+            # FIX: clear the re-entrancy guard once the popup actually
+            # closes, and unbind the popup-only keyboard handler.
+            Window.unbind(on_key_down=_popup_keydown)
+            self._reset_popup_open = False
+
+        popup.bind(on_dismiss=_on_dismiss)
         popup.open()
 
     def _do_reset(self):
