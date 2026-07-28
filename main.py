@@ -1,6 +1,21 @@
 """
 PATSB Traffic Counter — Kivy landscape, square grid clusters with haptic feedback
 """
+import os
+import sys
+# FIX (desktop/.exe reliability): default to Kivy's bundled ANGLE backend
+# (translates to DirectX) on Windows, before any Kivy import happens —
+# GL backend selection is decided at Window-import time, so this has to
+# come first. This is what fixed the Windows .exe build hanging/crashing
+# in CI (GitHub's Windows runners have no real GPU, only software OpenGL
+# 1.1, which is below Kivy's OpenGL 2.0 minimum). ANGLE works even
+# without real GPU drivers, and is harmless on machines that do have a
+# real GPU — so this also protects the shipped .exe on whatever office
+# PC actually runs it, in case it has old/integrated graphics. Respects
+# an explicit override if one is already set.
+if sys.platform == 'win32':
+    os.environ.setdefault('KIVY_GL_BACKEND', 'angle_sdl2')
+
 from kivy.config import Config
 import math
 import json
@@ -10,6 +25,7 @@ from kivy.uix.image import Image as KivyImage
 from kivy.core.audio import SoundLoader
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
@@ -20,8 +36,6 @@ from kivy.graphics import (Color, Ellipse, Line, RoundedRectangle,
                            Rectangle, Triangle, Bezier, InstructionGroup)
 from kivy.clock import Clock
 import time
-import os
-import sys
 # Must be set before ANY kivy import — forces zero-delay touch on APK
 os.environ['KIVY_BCM_DISPMANX_ID'] = '0'
 os.environ['KCFG_POSTPROC_DOUBLE_TAP_TIME'] = '0'
@@ -31,7 +45,13 @@ os.environ['KCFG_POSTPROC_RETAIN_DISTANCE'] = '0'
 os.environ['KCFG_POSTPROC_JITTER_DISTANCE'] = '0'
 
 
-Config.set('graphics', 'resizable', '0')
+if platform == 'android':
+    Config.set('graphics', 'resizable', '0')
+else:
+    # FIX: desktop use should allow resizing and minimizing the window
+    # (e.g. to work alongside video footage on the same screen) — only
+    # mobile needs a fixed size.
+    Config.set('graphics', 'resizable', '1')
 Config.set('graphics', 'show_cursor', '1')
 Config.set('input', 'mouse', 'mouse,disable_multitouch')
 Config.set('postproc', 'double_tap_time', '0')
@@ -45,6 +65,14 @@ Config.set('postproc', 'jitter_ignore_devices', 'mouse,mactouch,')
 Window.clearcolor = (0.08, 0.09, 0.12, 1)
 if platform != 'android':
     Window.size = (1280, 720)
+    # FIX: stop the window from being resized smaller than everything can
+    # still fit and stay usable/visible.
+    Window.minimum_width = 960
+    # FIX: lowered way down (from 560) so the window can be squeezed into
+    # a thin horizontal strip — useful when pinned on top of a video
+    # player. Everything still lays out proportionally at this height,
+    # just smaller; below ~150 things start getting genuinely unusable.
+    Window.minimum_height = 150
 
 # FIX: tracks whether the app is currently in the foreground. Used by
 # TimerWidget so the alarm sound is suppressed while the app is minimised
@@ -56,9 +84,94 @@ _APP_FOREGROUND = True
 # alert sound while the app is backgrounded — only once it's reopened.
 _APP_FOREGROUND = True
 
-SAVE_FILE = os.path.join(os.path.dirname(
-    os.path.abspath(__file__)), "traffic_save.json")
+def _config_dir():
+    """Where user-editable/persistent files (save data, keymap) live.
+    FIX: previously used os.path.dirname(__file__) directly, which for a
+    PyInstaller-packaged .exe points inside a temporary extraction folder
+    that's deleted the moment the app closes — meaning saved counts and
+    any keymap customization would silently vanish between runs on
+    desktop. sys.executable's folder is the actual, persistent location
+    of the .exe itself."""
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+SAVE_FILE = os.path.join(_config_dir(), "traffic_save.json")
 DEFAULT_TIMER = 15 * 60
+
+# ── Keyboard shortcut customization ──────────────────────────────────────────
+# FIX: some colleagues may prefer different keys than the default layout —
+# this makes every shortcut configurable via a plain-text keymap.json file
+# that sits next to the app, instead of being hardcoded. If the file
+# doesn't exist yet, sensible defaults are written out automatically so
+# there's something to find and edit.
+DEFAULT_KEYMAP = {
+    # Left junction
+    'j1_car': 'k', 'j1_moto': 'l', 'j1_lorry': 'p', 'j1_bus': 'm', 'j1_llry': ',',
+    # Right junction
+    'j2_car': 's', 'j2_moto': 'a', 'j2_lorry': 'q', 'j2_bus': 'x', 'j2_llry': 'z',
+    # Global controls
+    'timer_pause': 'r',   # NOT space — space is left free for the video player
+    'timer_set':   't',
+    'lock':        'c',
+    'pin':         'v',
+    'undo':        'u',
+    'redo':        'y',
+    'reset':       'escape',
+    'help':        'f1',
+    'dock_top':    'up',
+    'dock_bottom': 'down',
+}
+
+# Names the "keyboard" (global hotkey) library and our own key==NNN checks
+# both understand for non-printable keys. Anything not in here is treated
+# as a literal single printable character.
+_SPECIAL_KEY_CODES = {
+    'escape': 27, 'enter': 13, 'f1': 282, 'up': 273, 'down': 274,
+    'space': 32, 'tab': 9, 'backspace': 8,
+}
+_CODE_TO_SPECIAL_NAME = {v: k for k, v in _SPECIAL_KEY_CODES.items()}
+
+
+def _keypress_to_keyval(key, codepoint):
+    """Inverse of the lookup above — converts an actual captured keypress
+    (from the in-app rebind UI) back into a keymap.json-style value."""
+    if key in _CODE_TO_SPECIAL_NAME:
+        return _CODE_TO_SPECIAL_NAME[key]
+    if codepoint:
+        return codepoint.lower()
+    return None
+
+
+def _keymap_path():
+    return os.path.join(_config_dir(), 'keymap.json')
+
+
+def _load_keymap():
+    km = dict(DEFAULT_KEYMAP)
+    if platform == 'android':
+        return km  # customization is a desktop-only concept
+    path = _keymap_path()
+    try:
+        if os.path.exists(path):
+            with open(path, 'r') as f:
+                loaded = json.load(f)
+            for k, v in loaded.items():
+                if k in km and isinstance(v, str) and v.strip():
+                    km[k] = v.strip().lower()
+            print('KEYMAP: loaded custom bindings from', path)
+        else:
+            with open(path, 'w') as f:
+                json.dump(DEFAULT_KEYMAP, f, indent=2)
+            print('KEYMAP: wrote default keymap.json to', path,
+                  '— edit this file to customize shortcuts')
+    except Exception as e:
+        print('KEYMAP: failed to load/write keymap.json (%s) — using '
+              'built-in defaults' % e)
+    return km
+
+
 SUMMARY_ORDER_LEFT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]
 SUMMARY_ORDER_RIGHT = ["CAR", "LRY", "LLRY", "BUS", "MOTO"]
 SUMMARY_ORDER = SUMMARY_ORDER_LEFT
@@ -72,6 +185,22 @@ VEHICLES = {
 
 TOP_H = 120
 TIMER_H = 130
+
+
+def _get_screen_size():
+    """Physical screen resolution, used for docking the window to the top
+    or bottom edge (Ctrl+Up/Ctrl+Down). Windows-only for now — that's the
+    desktop platform this is actually built/used for; other desktop OSes
+    just won't support docking (the shortcut becomes a no-op) rather than
+    risk something unreliable."""
+    if platform == 'win':
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        except Exception:
+            return None
+    return None
 
 # ── Haptic feedback ──────────────────────────────────────────────────────────
 _haptic_flash_ev = None
@@ -426,6 +555,20 @@ class IconButton(Button):
                 self.dispatch('on_release')
             return True
         return False
+
+
+# ── Clickable label (used for the shortcuts bar → opens rebind UI) ───────────
+class _ClickableLabel(Label):
+    def __init__(self, on_press=None, **kwargs):
+        super().__init__(**kwargs)
+        self._on_press_cb = on_press
+
+    def on_touch_up(self, touch):
+        if self.collide_point(*touch.pos):
+            if self._on_press_cb:
+                self._on_press_cb()
+            return True
+        return super().on_touch_up(touch)
 
 
 # ── Safe plain-text button (Cancel/Confirm/Set/Reset etc.) ───────────────────
@@ -1162,6 +1305,7 @@ class TimerWidget(BoxLayout):
         # FIX: re-entrancy guard so a double-fired tap on SET can't stack a
         # second Set-Timer popup underneath the first one.
         self._set_popup_open = False
+        self._active_cancel_fn = None
 
         # FIX (background timer): instead of only counting down via Clock
         # ticks (which Android suspends while the app is minimised), we
@@ -1371,6 +1515,11 @@ class TimerWidget(BoxLayout):
             self.lbl.text   = self._fmt(prev_duration)
             popup.dismiss()
 
+        # FIX: stored so toggle_set_popup() (used by the global-hotkey
+        # path, which can't reach this local closure otherwise) can close
+        # this popup the same way Escape/T does.
+        self._active_cancel_fn = _cancel
+
         def _apply(*a):
             try:
                 m_val = int(inp_m.text.strip()) if inp_m.text.strip() else prev_m
@@ -1423,6 +1572,12 @@ class TimerWidget(BoxLayout):
             if key == 27:  # Escape — cancels, same as clicking Cancel
                 _cancel()
                 return True
+            if (codepoint or '').lower() == getattr(self, 'toggle_key', 't'):
+                # FIX: whatever key opens this popup (see _on_keyboard,
+                # default 't' but customizable via keymap.json) also
+                # closes it if pressed again while it's open.
+                _cancel()
+                return True
             return False
 
         Window.bind(on_key_down=_popup_keydown)
@@ -1433,9 +1588,19 @@ class TimerWidget(BoxLayout):
             # closes, and unbind the popup-only keyboard handler.
             Window.unbind(on_key_down=_popup_keydown)
             self._set_popup_open = False
+            self._active_cancel_fn = None
 
         popup.bind(on_dismiss=_on_dismiss)
         popup.open()
+
+    def toggle_set_popup(self):
+        """Open the Set Timer popup if closed, close it if open — used by
+        both the T key and the global Ctrl+Alt+T hotkey."""
+        if self._set_popup_open:
+            if self._active_cancel_fn:
+                self._active_cancel_fn()
+        else:
+            self._open_set()
 
 
 # ── Loading screen ────────────────────────────────────────────────────────────
@@ -1531,6 +1696,25 @@ class LoadingScreen(FloatLayout):
 class RootLayout(FloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # FIX: loaded first, before any widget construction, so the
+        # vehicle button dicts, TimerWidget's toggle key, and the
+        # shortcuts bar/help popup text can all reference it regardless
+        # of construction order below.
+        self.keymap = _load_keymap()
+        self._KEYS_J1 = {
+            self.keymap['j1_car']:  'CAR',
+            self.keymap['j1_moto']: 'MOTO',
+            self.keymap['j1_lorry']:'LRY',
+            self.keymap['j1_bus']:  'BUS',
+            self.keymap['j1_llry']: 'LLRY',
+        }
+        self._KEYS_J2 = {
+            self.keymap['j2_car']:  'CAR',
+            self.keymap['j2_moto']: 'MOTO',
+            self.keymap['j2_lorry']:'LRY',
+            self.keymap['j2_bus']:  'BUS',
+            self.keymap['j2_llry']: 'LLRY',
+        }
         self._undo_snapshot = None
         self._redo_snapshot = None
         self._locked = False
@@ -1539,10 +1723,17 @@ class RootLayout(FloatLayout):
         self._reset_popup_open = False
         # FIX: tracks whether the keyboard-shortcuts help popup is open.
         self._help_popup_open = False
+        # FIX: tracks whether the in-app keybindings editor is open.
+        self._keybind_popup_open = False
 
         top = BoxLayout(size_hint=(1, None), height=TOP_H,
                         pos_hint={'x': 0, 'top': 1},
                         spacing=6, padding=[6, 6, 6, 6])
+        # FIX: kept as a reference so _layout() can shrink its height at
+        # small window sizes — previously fixed at TOP_H permanently,
+        # which meant a thin window would be almost entirely consumed by
+        # this bar alone.
+        self.top_bar = top
         self.j1_summary = JunctionSummary(on_minus=self._on_minus,
                                           order=SUMMARY_ORDER_LEFT,
                                           is_locked=lambda: self._locked,
@@ -1592,6 +1783,31 @@ class RootLayout(FloatLayout):
         self.timer_box.add_widget(self.lock_btn)
         self.add_widget(self.timer_box)
 
+        # FIX: always-visible keyboard shortcuts reference — desktop only
+        # (no keyboard on Android, and mobile screen space is precious).
+        # A thin strip pinned to the bottom, sized/font-scaled in
+        # _layout() rather than shown only in a popup you have to open.
+        if platform == 'android':
+            self.shortcuts_bar = None
+        else:
+            self.shortcuts_bar = _ClickableLabel(
+                on_press=self._show_keybindings_editor,
+                text=self._build_shortcuts_bar_text(),
+                font_size=11, color=(0.72, 0.75, 0.80, 0.95),
+                halign='center', valign='middle',
+                size_hint=(None, None))
+            self.shortcuts_bar.bind(
+                size=lambda i, v: setattr(i, 'text_size', v))
+            with self.shortcuts_bar.canvas.before:
+                Color(0, 0, 0, 0.4)
+                self._shortcuts_bg_rect = Rectangle(
+                    pos=self.shortcuts_bar.pos, size=self.shortcuts_bar.size)
+            def _upd_shortcuts_bg(inst, *a):
+                self._shortcuts_bg_rect.pos = inst.pos
+                self._shortcuts_bg_rect.size = inst.size
+            self.shortcuts_bar.bind(pos=_upd_shortcuts_bg, size=_upd_shortcuts_bg)
+            self.add_widget(self.shortcuts_bar)
+
         self.bind(size=self._layout)
         self.reset_btn.bind(size=self._layout)
         self.j1_summary.chips['MOTO'][0].bind(pos=self._layout, size=self._layout)
@@ -1600,26 +1816,105 @@ class RootLayout(FloatLayout):
 
         # FIX (desktop keyboard support): lets the surveyor keep both
         # hands on the keyboard while watching video footage, instead of
-        # needing the mouse. Mirrors the screen layout — left hand covers
-        # the left junction, right hand covers the right junction — so
-        # each hand independently logs whichever junction it's watching.
+        # needing the mouse.
+        # FIX: so the Set Timer popup's own "press the same key again to
+        # close" logic respects a customized timer_set key too, not just
+        # the outer open/close toggle.
+        self.timer.toggle_key = self.keymap['timer_set']
         Window.bind(on_key_down=self._on_keyboard)
 
-    # J1 (left junction): W J K O L
-    # J2 (right junction): I D S Q A
-    _KEYS_J1 = {'w': 'CAR', 'j': 'MOTO', 'k': 'BUS', 'o': 'LRY', 'l': 'LLRY'}
-    _KEYS_J2 = {'i': 'CAR', 'd': 'MOTO', 's': 'BUS', 'q': 'LRY', 'a': 'LLRY'}
+    # ── Action methods ──────────────────────────────────────────────────
+    # Kept as separate small methods (rather than inlined in
+    # _on_keyboard) so each is independently easy to test/read.
+
+    def _act_vehicle(self, junction, vehicle, decrement):
+        if self._locked:
+            return
+        summary  = self.j1_summary if junction == 'j1' else self.j2_summary
+        cluster  = self.j1_cluster if junction == 'j1' else self.j2_cluster
+        tap_fn   = self._j1_tap    if junction == 'j1' else self._j2_tap
+        if decrement:
+            summary._minus(vehicle)
+        else:
+            tap_fn(vehicle)
+            # FIX: a real touch on this button gets haptic + sound via
+            # SquareGridCluster._tap — but keyboard shortcuts call the
+            # tap method directly, bypassing that, so this matches it for
+            # full parity with a real touch (and with decrement, whose
+            # _minus already includes all of this).
+            btn = cluster._buttons.get(vehicle)
+            if btn:
+                btn.flash_press()
+            import threading
+            threading.Thread(target=lambda: (
+                haptic_tap(), play_tap()), daemon=True).start()
+
+    def _act_timer_toggle(self):
+        if self._locked:
+            return
+        play_startpause()
+        self.timer._toggle()
+
+    def _act_set_timer_toggle(self):
+        if self._locked:
+            return
+        self.timer.toggle_set_popup()
+
+    def _act_undo(self):
+        if self._locked:
+            return
+        haptic_tap(); play_startpause(); self._do_undo()
+
+    def _act_redo(self):
+        if self._locked:
+            return
+        haptic_tap(); play_startpause(); self._do_redo()
+
+    def _act_lock(self):
+        self._toggle_lock()
+
+    def _act_pin(self):
+        if platform == 'android':
+            return
+        Window.always_on_top = not Window.always_on_top
+        Window.set_title('PATSB Traffic Counter' +
+                         (' (Pinned)' if Window.always_on_top else ''))
+
+    def _act_dock(self, edge):
+        if platform == 'android':
+            return
+        self._dock_window(edge)
+
+    def _act_reset(self):
+        if self._locked:
+            return
+        self._confirm_reset()
+
+    def _act_help(self):
+        self._show_keyboard_help()
+
+    def _keyval_to_code(self, val):
+        """Resolve one keymap.json value (e.g. 'escape', 'up', or a plain
+        letter) to the numeric keycode _on_keyboard's 'key' argument uses."""
+        if val in _SPECIAL_KEY_CODES:
+            return _SPECIAL_KEY_CODES[val]
+        if len(val) == 1:
+            return ord(val)
+        return None
 
     def _on_keyboard(self, window, key, scancode, codepoint, modifiers):
         # FIX: while a popup is open (Set Timer's MM/SS text fields, the
-        # Reset All confirmation, or this help popup), these shortcuts
-        # must stand down — otherwise typing a digit or pressing Backspace
-        # to edit the MM/SS fields would get hijacked (e.g. Backspace
-        # would try to open Reset All instead of deleting a character).
-        if self.timer._set_popup_open or self._reset_popup_open:
+        # Reset All confirmation, the help popup, or the keybindings
+        # editor), these shortcuts must stand down — otherwise typing a
+        # digit or pressing Backspace to edit the MM/SS fields would get
+        # hijacked, and while rebinding a key, the OLD action for that key
+        # would also fire alongside the rebind capture.
+        if (self.timer._set_popup_open or self._reset_popup_open or
+                getattr(self, '_keybind_popup_open', False)):
             return False
 
         ch = (codepoint or '').lower()
+        ctrl = 'ctrl' in modifiers
         shift = 'shift' in modifiers
 
         if self._help_popup_open:
@@ -1629,98 +1924,272 @@ class RootLayout(FloatLayout):
                 self._help_popup.dismiss()
             return True
 
+        # FIX: Ctrl-combo actions (undo/redo/dock) are checked BEFORE the
+        # bare vehicle-key checks below. This matters now that vehicle
+        # keys are customizable — e.g. the default keymap uses "z" for a
+        # vehicle and Ctrl+Z for undo; checking Ctrl-combos first (by
+        # keycode, not codepoint, which Ctrl can suppress/alter) means
+        # holding Ctrl always means "undo", never "tap the z vehicle",
+        # regardless of what letter either one happens to be bound to.
+        if ctrl and key == self._keyval_to_code(self.keymap['undo']):
+            self._act_undo()
+            return True
+        if ctrl and key == self._keyval_to_code(self.keymap['redo']):
+            self._act_redo()
+            return True
+        if ctrl and key == self._keyval_to_code(self.keymap['dock_top']):
+            self._act_dock('top')
+            return True
+        if ctrl and key == self._keyval_to_code(self.keymap['dock_bottom']):
+            self._act_dock('bottom')
+            return True
+
+        # From here on, a Ctrl-held keypress is never treated as a bare
+        # shortcut — it's either one of the combos above, or not ours.
+        if ctrl:
+            return False
+
         if ch == '?' or key == 282:  # '?' or F1
-            self._show_keyboard_help()
+            self._act_help()
             return True
 
         if ch in self._KEYS_J1:
-            if self._locked:
-                return True
-            vehicle = self._KEYS_J1[ch]
-            if shift:
-                self.j1_summary._minus(vehicle)
-            else:
-                self._j1_tap(vehicle)
-                # FIX: a real touch on this button gets haptic + sound via
-                # SquareGridCluster._tap — but keyboard shortcuts call
-                # _j1_tap directly, bypassing that entirely, so keyboard
-                # increments were silent/feedback-less compared to
-                # decrement (whose _minus already includes all of this).
-                # Match it here for full parity.
-                btn = self.j1_cluster._buttons.get(vehicle)
-                if btn:
-                    btn.flash_press()
-                import threading
-                threading.Thread(target=lambda: (
-                    haptic_tap(), play_tap()), daemon=True).start()
+            self._act_vehicle('j1', self._KEYS_J1[ch], shift)
             return True
 
         if ch in self._KEYS_J2:
-            if self._locked:
-                return True
-            vehicle = self._KEYS_J2[ch]
-            if shift:
-                self.j2_summary._minus(vehicle)
-            else:
-                self._j2_tap(vehicle)
-                btn = self.j2_cluster._buttons.get(vehicle)
-                if btn:
-                    btn.flash_press()
-                import threading
-                threading.Thread(target=lambda: (
-                    haptic_tap(), play_tap()), daemon=True).start()
+            self._act_vehicle('j2', self._KEYS_J2[ch], shift)
             return True
 
-        if ch == ' ' or key == 32:
-            # Space: start/pause the timer — same action as the on-screen
-            # play/pause button.
-            if self._locked:
-                return True
-            play_startpause()
-            self.timer._toggle()
+        if ch == self.keymap['timer_pause']:
+            self._act_timer_toggle()
             return True
 
-        if ch == 't':
-            # T: open the Set Timer popup — same as the on-screen SET
-            # button.
-            if self._locked:
-                return True
-            self.timer._open_set()
+        if ch == self.keymap['timer_set']:
+            self._act_set_timer_toggle()
             return True
 
-        if key == 122 and 'ctrl' in modifiers:
-            # Ctrl+Z: undo. Matched by keycode, not codepoint — Ctrl+letter
-            # combos often don't produce a normal character, so codepoint
-            # can't be relied on here. Safe to call unconditionally —
-            # _do_undo() already no-ops internally if there's nothing to
-            # undo.
-            if self._locked:
-                return True
-            haptic_tap(); play_startpause(); self._do_undo()
+        if ch == self.keymap['lock']:
+            self._act_lock()
             return True
 
-        if key == 121 and 'ctrl' in modifiers:
-            # Ctrl+Y: redo. Same reasoning and same safety.
-            if self._locked:
-                return True
-            haptic_tap(); play_startpause(); self._do_redo()
+        if ch == self.keymap['pin']:
+            self._act_pin()
             return True
 
-        if ch == 'x':
-            # X: Lock/unlock — always allowed, even while locked (it's the
-            # only way to unlock again from the keyboard).
-            self._toggle_lock()
-            return True
-
-        if key == 27:
-            # Escape: open Reset All's confirmation popup. Once open,
-            # Tab/Enter/Escape navigate and act on it (see _confirm_reset).
-            if self._locked:
-                return True
-            self._confirm_reset()
+        if key == self._keyval_to_code(self.keymap['reset']):
+            self._act_reset()
             return True
 
         return False
+
+    def _dock_window(self, edge):
+        """Snap the window to the top or bottom screen edge, spanning
+        full screen width, keeping the current window height."""
+        screen = _get_screen_size()
+        if screen:
+            sw, sh = screen
+            Window.size = (sw, Window.height)
+            Window.left = 0
+            Window.top = 0 if edge == 'top' else max(0, sh - Window.height)
+        else:
+            # No reliable screen-size query on this OS — just snap
+            # vertically without resizing width, better than doing
+            # nothing at all.
+            Window.top = 0 if edge == 'top' else Window.top
+
+    def _build_shortcuts_bar_text(self):
+        km = self.keymap
+        return (
+            "{j1c} {j1m} {j1l} {j1b} {j1ll} = J1 Car/Moto/Lorry/Bus/LLorry   |   "
+            "{j2c} {j2m} {j2l} {j2b} {j2ll} = J2 Car/Moto/Lorry/Bus/LLorry   |   "
+            "Shift = Decrement   |   {pause} = Pause   |   {set} = Timer   |   "
+            "{lock} = Lock   |   {pin} = Pin   |   Ctrl+{undo}/{redo} = Undo/Redo   |   "
+            "Esc = Reset All   |   ? = Help   |   (click here to customize)"
+        ).format(
+            j1c=km['j1_car'].upper(), j1m=km['j1_moto'].upper(),
+            j1l=km['j1_lorry'].upper(), j1b=km['j1_bus'].upper(),
+            j1ll=km['j1_llry'].upper(),
+            j2c=km['j2_car'].upper(), j2m=km['j2_moto'].upper(),
+            j2l=km['j2_lorry'].upper(), j2b=km['j2_bus'].upper(),
+            j2ll=km['j2_llry'].upper(),
+            pause=km['timer_pause'].upper(), set=km['timer_set'].upper(),
+            lock=km['lock'].upper(), pin=km['pin'].upper(),
+            undo=km['undo'].upper(), redo=km['redo'].upper(),
+        )
+
+    def _apply_keymap_change(self):
+        """Called after ANY rebind — rebuilds everything that depends on
+        the keymap and saves it to disk, so changes take effect
+        immediately without needing to restart the app."""
+        self._KEYS_J1 = {
+            self.keymap['j1_car']:  'CAR',
+            self.keymap['j1_moto']: 'MOTO',
+            self.keymap['j1_lorry']:'LRY',
+            self.keymap['j1_bus']:  'BUS',
+            self.keymap['j1_llry']: 'LLRY',
+        }
+        self._KEYS_J2 = {
+            self.keymap['j2_car']:  'CAR',
+            self.keymap['j2_moto']: 'MOTO',
+            self.keymap['j2_lorry']:'LRY',
+            self.keymap['j2_bus']:  'BUS',
+            self.keymap['j2_llry']: 'LLRY',
+        }
+        self.timer.toggle_key = self.keymap['timer_set']
+        if self.shortcuts_bar is not None:
+            self.shortcuts_bar.text = self._build_shortcuts_bar_text()
+        try:
+            with open(_keymap_path(), 'w') as f:
+                json.dump(self.keymap, f, indent=2)
+        except Exception as e:
+            print('KEYMAP: failed to save keymap.json:', e)
+
+    def _show_keybindings_editor(self):
+        # FIX: in-app rebinding UI — the app is distributed as a single
+        # .exe to multiple colleagues who may each want different keys,
+        # and most won't want to hand-edit a JSON file. Click any action
+        # here, then press the key you want; it's saved to keymap.json
+        # and applied immediately, no restart needed.
+        if getattr(self, '_keybind_popup_open', False):
+            return
+        self._keybind_popup_open = True
+
+        ACTIONS = [
+            ('j1_car', 'Left: Car'), ('j1_moto', 'Left: Motorcycle'),
+            ('j1_lorry', 'Left: Lorry'), ('j1_bus', 'Left: Bus'),
+            ('j1_llry', 'Left: Large Lorry'),
+            ('j2_car', 'Right: Car'), ('j2_moto', 'Right: Motorcycle'),
+            ('j2_lorry', 'Right: Lorry'), ('j2_bus', 'Right: Bus'),
+            ('j2_llry', 'Right: Large Lorry'),
+            ('timer_pause', 'Pause / Resume Timer'),
+            ('timer_set', 'Open / Close Set Timer'),
+            ('lock', 'Lock / Unlock'),
+            ('pin', 'Pin Window on Top'),
+            ('undo', 'Undo (used with Ctrl)'),
+            ('redo', 'Redo (used with Ctrl)'),
+            ('reset', 'Reset All'),
+            ('help', 'Show Help'),
+            ('dock_top', 'Dock to Top (used with Ctrl)'),
+            ('dock_bottom', 'Dock to Bottom (used with Ctrl)'),
+        ]
+
+        content = BoxLayout(orientation='vertical', spacing=10, padding=20)
+        content.add_widget(Label(text="Customize Keyboard Shortcuts",
+                                 font_size=20, bold=True, color=(1, 1, 1, 1),
+                                 size_hint=(1, None), height=28))
+        hint = Label(text="Click a key, then press the new key you want.",
+                    font_size=13, color=(0.7, 0.73, 0.78, 1),
+                    size_hint=(1, None), height=20)
+        content.add_widget(hint)
+
+        scroll = ScrollView(size_hint=(1, 1))
+        rows = GridLayout(cols=1, spacing=6, size_hint=(1, None))
+        rows.bind(minimum_height=rows.setter('height'))
+        scroll.add_widget(rows)
+        content.add_widget(scroll)
+
+        status_lbl = Label(text="", font_size=12, color=(1, 0.6, 0.4, 1),
+                           size_hint=(1, None), height=18)
+        content.add_widget(status_lbl)
+
+        key_buttons = {}   # action_name -> SafeButton showing its current key
+        listening = {'action': None, 'handler': None}
+
+        def _display(val):
+            return val.upper() if val else '?'
+
+        def _stop_listening():
+            if listening['handler'] is not None:
+                Window.unbind(on_key_down=listening['handler'])
+            listening['action'] = None
+            listening['handler'] = None
+            status_lbl.text = ""
+
+        def _start_listening(action_name):
+            _stop_listening()
+            listening['action'] = action_name
+            key_buttons[action_name].text = "Press a key..."
+            status_lbl.text = "Listening for a new key for: " + \
+                dict(ACTIONS)[action_name]
+
+            def _capture(window, key, scancode, codepoint, modifiers):
+                if key in (304, 305, 306, 307, 308, 309):  # bare modifier keys
+                    return True
+                newval = _keypress_to_keyval(key, codepoint)
+                if not newval:
+                    status_lbl.text = "Didn't recognise that key — try another."
+                    return True
+                # FIX: block binding the same key to two different actions
+                conflict = None
+                for name, val in self.keymap.items():
+                    if name != action_name and val == newval:
+                        conflict = dict(ACTIONS).get(name, name)
+                        break
+                if conflict:
+                    status_lbl.text = ('"%s" is already used by "%s" — '
+                                       'pick a different key.' %
+                                       (newval.upper(), conflict))
+                    return True
+                self.keymap[action_name] = newval
+                key_buttons[action_name].text = _display(newval)
+                self._apply_keymap_change()
+                _stop_listening()
+                return True
+
+            listening['handler'] = _capture
+            Window.bind(on_key_down=_capture)
+
+        for name, label in ACTIONS:
+            row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=36, spacing=10)
+            lbl = Label(text=label, font_size=14, color=(0.88, 0.90, 0.92, 1),
+                       halign='left', valign='middle', size_hint=(0.62, 1))
+            lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+            row.add_widget(lbl)
+            btn = SafeButton(text=_display(self.keymap.get(name, '')),
+                            font_size=14, bold=True, color=(1, 1, 1, 1),
+                            background_normal='', background_color=(0.25, 0.35, 0.60, 1),
+                            size_hint=(0.38, 1))
+            btn.bind(on_release=lambda b, n=name: _start_listening(n))
+            key_buttons[name] = btn
+            row.add_widget(btn)
+            rows.add_widget(row)
+
+        btn_row = BoxLayout(orientation='horizontal', spacing=10,
+                            size_hint=(1, None), height=48)
+        reset_btn = SafeButton(text="Reset All to Defaults", font_size=14, bold=True,
+                               color=(1, 1, 1, 1), background_normal='',
+                               background_color=(0.55, 0.25, 0.25, 1))
+        close_btn = SafeButton(text="Done", font_size=16, bold=True, color=(1, 1, 1, 1),
+                               background_normal='', background_color=(0.20, 0.55, 0.30, 1))
+
+        def _reset_defaults(*a):
+            _stop_listening()
+            self.keymap = dict(DEFAULT_KEYMAP)
+            for name, _ in ACTIONS:
+                key_buttons[name].text = _display(self.keymap.get(name, ''))
+            self._apply_keymap_change()
+            status_lbl.text = "Reset to defaults."
+
+        reset_btn.bind(on_release=_reset_defaults)
+        btn_row.add_widget(reset_btn)
+        btn_row.add_widget(close_btn)
+        content.add_widget(btn_row)
+
+        popup = Popup(title='Keybindings', title_size=20, content=content,
+                      size_hint=(0.75, 0.9),
+                      background_color=(0.14, 0.15, 0.20, 1),
+                      title_color=(1, 1, 1, 1),
+                      separator_color=(0.25, 0.27, 0.32, 1),
+                      auto_dismiss=False)
+        close_btn.bind(on_release=lambda *a: popup.dismiss())
+
+        def _on_dismiss(*a):
+            _stop_listening()
+            self._keybind_popup_open = False
+
+        popup.bind(on_dismiss=_on_dismiss)
+        popup.open()
 
     def _show_keyboard_help(self):
         # FIX: on-screen keyboard shortcuts reference for desktop use —
@@ -1731,35 +2200,80 @@ class RootLayout(FloatLayout):
             return
         self._help_popup_open = True
 
-        rows = [
-            ("W J K O L", "Left junction: Car / Moto / Bus / Lorry / Long-lorry"),
-            ("I D S Q A", "Right junction: Car / Moto / Bus / Lorry / Long-lorry"),
-            ("Shift + any of the above", "Decrement instead of increment"),
-            ("Space", "Start / Pause timer"),
-            ("T", "Open Set Timer"),
-            ("Ctrl+Z", "Undo"),
-            ("Ctrl+Y", "Redo"),
-            ("X", "Lock / Unlock"),
-            ("Esc", "Reset All (Tab/Enter to choose, Esc to cancel)"),
-            ("? or F1", "Show this help"),
+        # FIX: built from the actual loaded keymap now, not hardcoded —
+        # so a customized keymap.json shows up here automatically instead
+        # of the help going stale/wrong.
+        def K(name):
+            return self.keymap[name].upper()
+
+        sections = [
+            ("Left Junction", [
+                (K('j1_car'),  "Car"),
+                (K('j1_moto'), "Motorcycle"),
+                (K('j1_lorry'),"Lorry"),
+                (K('j1_bus'),  "Bus"),
+                (K('j1_llry'), "Large Lorry"),
+            ]),
+            ("Right Junction", [
+                (K('j2_car'),  "Car"),
+                (K('j2_moto'), "Motorcycle"),
+                (K('j2_lorry'),"Lorry"),
+                (K('j2_bus'),  "Bus"),
+                (K('j2_llry'), "Large Lorry"),
+            ]),
+            ("Global", [
+                ("Shift + key", "Decrement instead of increment"),
+                (K('timer_pause'), "Start / Pause timer"),
+                (K('timer_set'), "Open / close Set Timer"),
+                ("Ctrl + " + K('undo'), "Undo"),
+                ("Ctrl + " + K('redo'), "Redo"),
+                (K('lock'), "Lock / Unlock"),
+                (K('pin'), "Pin window on top (desktop)"),
+                ("Ctrl + \u2191", "Dock window to top of screen"),
+                ("Ctrl + \u2193", "Dock window to bottom of screen"),
+                ("Esc", "Reset All (Tab/Enter to choose)"),
+                ("? or F1", "Show this help"),
+                ("(click bottom bar)", "Customize any key"),
+            ]),
         ]
 
-        content = BoxLayout(orientation='vertical', spacing=10, padding=20)
-        content.add_widget(Label(text="Keyboard Shortcuts", font_size=22, bold=True,
-                                 color=(1, 1, 1, 1), size_hint=(1, None), height=32))
+        def _key_badge(text):
+            wrap = BoxLayout(size_hint=(0.32, 1), padding=[2, 2, 2, 2])
+            lbl = Label(text=text, font_size=14, bold=True,
+                       color=(0.08, 0.10, 0.14, 1), halign='center', valign='middle')
+            lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+            rect_holder = {}
+            with wrap.canvas.before:
+                Color(0.55, 0.82, 1.0, 1)
+                rect_holder['rect'] = RoundedRectangle(pos=wrap.pos, size=wrap.size, radius=[6])
+            def _upd(*a):
+                rect_holder['rect'].pos = wrap.pos
+                rect_holder['rect'].size = wrap.size
+            wrap.bind(pos=_upd, size=_upd)
+            wrap.add_widget(lbl)
+            return wrap
 
-        rows_box = BoxLayout(orientation='vertical', spacing=4, size_hint=(1, 1))
-        for keys, desc in rows:
-            row = BoxLayout(orientation='horizontal', size_hint=(1, None), height=28)
-            row.add_widget(Label(text=keys, font_size=15, bold=True,
-                                 color=(0.55, 0.85, 1.0, 1), halign='left',
-                                 valign='middle', size_hint=(0.38, 1)))
-            row.add_widget(Label(text=desc, font_size=15, color=(0.85, 0.87, 0.90, 1),
-                                 halign='left', valign='middle', size_hint=(0.62, 1)))
-            for lbl in row.children:
-                lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
-            rows_box.add_widget(row)
-        content.add_widget(rows_box)
+        content = BoxLayout(orientation='vertical', spacing=14, padding=22)
+        content.add_widget(Label(text="Keyboard Shortcuts", font_size=23, bold=True,
+                                 color=(1, 1, 1, 1), size_hint=(1, None), height=30))
+
+        body = BoxLayout(orientation='vertical', spacing=12, size_hint=(1, 1))
+        for i, (section_title, rows) in enumerate(sections):
+            header = Label(text=section_title, font_size=15, bold=True,
+                          color=(0.55, 0.82, 1.0, 1), halign='left', valign='middle',
+                          size_hint=(1, None), height=22)
+            header.bind(size=lambda i, v: setattr(i, 'text_size', v))
+            body.add_widget(header)
+            for keys, desc in rows:
+                row = BoxLayout(orientation='horizontal', size_hint=(1, None),
+                               height=32, spacing=10)
+                row.add_widget(_key_badge(keys))
+                desc_lbl = Label(text=desc, font_size=14, color=(0.85, 0.87, 0.90, 1),
+                                 halign='left', valign='middle', size_hint=(0.68, 1))
+                desc_lbl.bind(size=lambda i, v: setattr(i, 'text_size', v))
+                row.add_widget(desc_lbl)
+                body.add_widget(row)
+        content.add_widget(body)
 
         close_btn = SafeButton(text="Close", font_size=16, bold=True, color=(1, 1, 1, 1),
                                background_normal='', background_color=(0.25, 0.35, 0.60, 1),
@@ -1767,7 +2281,7 @@ class RootLayout(FloatLayout):
         content.add_widget(close_btn)
 
         popup = Popup(title='Help', title_size=20, content=content,
-                      size_hint=(0.7, 0.75),
+                      size_hint=(0.78, 0.9),
                       background_color=(0.14, 0.15, 0.20, 1),
                       title_color=(1, 1, 1, 1),
                       separator_color=(0.25, 0.27, 0.32, 1),
@@ -1783,7 +2297,32 @@ class RootLayout(FloatLayout):
 
     def _layout(self, *a):
         W, H = self.size
-        cluster_h = H - TOP_H
+        # FIX: scale the top summary bar down at small window heights
+        # instead of leaving it permanently fixed at TOP_H — otherwise a
+        # thin pinned window would be mostly the summary bar with almost
+        # no room left for the actual counting buttons.
+        # FIX: lowered the top bar's share (was 0.35) — the vehicle icons
+        # sit in a 3-row grid, so they were shrinking roughly 3x faster
+        # than the summary text as the window got thinner, making icons
+        # look disproportionately small next to it. This leaves clusters
+        # relatively more room.
+        top_h = min(TOP_H, max(40, H * 0.22))
+        self.top_bar.height = top_h
+
+        # FIX: reserve a thin strip at the very bottom for the always-
+        # visible keyboard shortcuts reference (desktop only — pointless
+        # on Android, which has no keyboard). Scales with window size
+        # too, within a small legible-but-unobtrusive range.
+        if self.shortcuts_bar is not None:
+            bar_h = min(26, max(14, H * 0.035))
+            self.shortcuts_bar.height = bar_h
+            self.shortcuts_bar.font_size = max(9, min(12, bar_h * 0.5))
+            self.shortcuts_bar.pos = (0, 0)
+            self.shortcuts_bar.size = (W, bar_h)
+        else:
+            bar_h = 0
+
+        cluster_h = H - top_h - bar_h
 
         moto_chip    = self.j1_summary.chips['MOTO'][0]
         left_grid_w  = moto_chip.right if moto_chip.width > 1 else W*0.42
@@ -1793,14 +2332,14 @@ class RootLayout(FloatLayout):
         right_grid_w = W - right_grid_x
 
         self.j1_cluster.size = (left_grid_w, cluster_h)
-        self.j1_cluster.pos  = (0, 0)
+        self.j1_cluster.pos  = (0, bar_h)
         self.j2_cluster.size = (right_grid_w, cluster_h)
-        self.j2_cluster.pos  = (right_grid_x, 0)
+        self.j2_cluster.pos  = (right_grid_x, bar_h)
 
         timer_w      = self.reset_btn.width if self.reset_btn.width > 1 else W*0.16
         total_box_h  = min(TIMER_H + self._lock_btn_h + 6, cluster_h - 12)
         self.timer_box.size = (timer_w, total_box_h)
-        self.timer_box.pos  = (W/2 - timer_w/2, (cluster_h - total_box_h)/2)
+        self.timer_box.pos  = (W/2 - timer_w/2, bar_h + (cluster_h - total_box_h)/2)
 
     def _j1_tap(self, key):
         if self._locked:
@@ -2012,8 +2551,13 @@ class RootLayout(FloatLayout):
 
 class TrafficCounterApp(App):
     def build(self):
-        Window.fullscreen = 'auto'
-        Window.orientation = 'landscape'
+        # FIX: fullscreen and orientation-lock are mobile concepts —
+        # forcing fullscreen on desktop would fight against being able to
+        # resize/minimize the window (e.g. to sit alongside video
+        # footage).
+        if platform == 'android':
+            Window.fullscreen = 'auto'
+            Window.orientation = 'landscape'
         self._root = FloatLayout()
         self._root.add_widget(LoadingScreen(on_done=self._launch))
         return self._root
