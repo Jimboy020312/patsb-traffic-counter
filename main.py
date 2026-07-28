@@ -86,12 +86,22 @@ _APP_FOREGROUND = True
 
 def _config_dir():
     """Where user-editable/persistent files (save data, keymap) live.
-    FIX: previously used os.path.dirname(__file__) directly, which for a
-    PyInstaller-packaged .exe points inside a temporary extraction folder
-    that's deleted the moment the app closes — meaning saved counts and
-    any keymap customization would silently vanish between runs on
-    desktop. sys.executable's folder is the actual, persistent location
-    of the .exe itself."""
+    FIX: previously used the exe's own folder (via sys.executable) once
+    frozen. That broke in practice — the exe can end up inside a
+    OneDrive-synced folder (Desktop, Documents, etc.), where file writes
+    can genuinely HANG while OneDrive's sync/lock mechanism intervenes,
+    freezing the whole app with no error at all. %APPDATA% is the
+    standard, always-local, never-cloud-synced-by-default location for
+    exactly this kind of per-user app data."""
+    if os.name == 'nt':
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            d = os.path.join(appdata, 'PATSB_Traffic_Counter')
+            try:
+                os.makedirs(d, exist_ok=True)
+                return d
+            except Exception:
+                pass
     if getattr(sys, 'frozen', False):
         return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
@@ -153,8 +163,10 @@ def _load_keymap():
     if platform == 'android':
         return km  # customization is a desktop-only concept
     path = _keymap_path()
+    print('KEYMAP: config dir is', _config_dir())
     try:
         if os.path.exists(path):
+            print('KEYMAP: reading', path)
             with open(path, 'r') as f:
                 loaded = json.load(f)
             for k, v in loaded.items():
@@ -162,6 +174,7 @@ def _load_keymap():
                     km[k] = v.strip().lower()
             print('KEYMAP: loaded custom bindings from', path)
         else:
+            print('KEYMAP: writing new default file to', path)
             with open(path, 'w') as f:
                 json.dump(DEFAULT_KEYMAP, f, indent=2)
             print('KEYMAP: wrote default keymap.json to', path,
