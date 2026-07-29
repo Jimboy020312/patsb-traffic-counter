@@ -87,7 +87,39 @@ jobs:
       # ANGLE backend (translates to DirectX) instead of raw OpenGL —
       # DirectX is available even without real GPU drivers, so this is
       # the standard fix for building/running Kivy apps in headless CI.
-      - name: Build EXE with PyInstaller
+      # Deliberately scoped to ONLY this step's env — main.py itself must
+      # never force this at runtime (that was traced back as the actual
+      # cause of a crash on real end-user hardware).
+      #
+      # FIX: switched from a single-command build to a two-step
+      # spec-file build. The Mesa software opengl32.dll installed earlier
+      # (next to python.exe, purely so THIS build step's analysis phase
+      # doesn't crash) was being detected as a DLL dependency and bundled
+      # straight into the shipped exe — meaning every end user's real GPU
+      # driver was getting silently overridden by our CI-only software
+      # renderer, which is what actually crashed on real hardware. This
+      # explicitly strips it from the package after generating the spec,
+      # before the actual build runs, so the shipped exe always uses
+      # whatever real OpenGL driver is on the machine it's run on.
+      - name: Generate PyInstaller spec
+        run: |
+          pyi-makespec --name PATSB_Traffic_Counter --onefile `
+            --add-data "assets;assets" `
+            --icon "assets/icon.png" `
+            main.py
+
+      - name: Strip build-only Mesa DLL from the spec
+        shell: powershell
+        run: |
+          $specPath = "PATSB_Traffic_Counter.spec"
+          $content = Get-Content $specPath -Raw
+          $filterLine = "a.binaries = [x for x in a.binaries if 'opengl32.dll' not in x[0].lower()]`r`n"
+          $content = $content -replace '(?m)^pyz = PYZ\(a\.pure\)', ($filterLine + 'pyz = PYZ(a.pure)')
+          Set-Content -Path $specPath -Value $content
+          Write-Host "--- Patched spec (relevant section) ---"
+          Select-String -Path $specPath -Pattern "opengl32|pyz = PYZ"
+
+      - name: Build EXE from patched spec
         env:
           KIVY_GL_BACKEND: angle_sdl2
         run: |
@@ -95,11 +127,7 @@ jobs:
           # console output, including the traceback for whatever's
           # crashing the exe on launch. Once that's fixed, --windowed can
           # go back so the app doesn't show a console window normally.
-          python -m PyInstaller --name PATSB_Traffic_Counter --onefile `
-            --add-data "assets;assets" `
-            --icon "assets/icon.png" `
-            --log-level DEBUG `
-            main.py 2>&1 | Tee-Object -FilePath pyinstaller_build.log
+          python -m PyInstaller PATSB_Traffic_Counter.spec 2>&1 | Tee-Object -FilePath pyinstaller_build.log
 
       - name: Upload PyInstaller log (always)
         if: always()
