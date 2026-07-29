@@ -1739,7 +1739,12 @@ class LoadingScreen(FloatLayout):
 
     def _draw_bar(self, *a):
         w = self._bar_widget
+        _verbose = getattr(self, '_anim_frame_count', 0) <= 3
+        if _verbose:
+            print('DRAWBAR: before clear')
         w.canvas.clear()
+        if _verbose:
+            print('DRAWBAR: after clear, before with-block')
         bw, bh = w.width, w.height
         if bw < 1:
             return
@@ -1749,8 +1754,13 @@ class LoadingScreen(FloatLayout):
             Color(0.10, 0.45, 0.90, 1)
             fill_w = max(bh, bw*self._bar_progress)
             RoundedRectangle(pos=(w.x, w.y), size=(fill_w, bh), radius=[bh/2])
+        if _verbose:
+            print('DRAWBAR: with-block completed OK')
 
     def _animate(self, dt):
+        self._anim_frame_count = getattr(self, '_anim_frame_count', 0) + 1
+        if self._anim_frame_count <= 5 or self._anim_frame_count % 10 == 0:
+            print('LOADINGSCREEN: animate frame', self._anim_frame_count)
         gap = self._target - self._bar_progress
         if gap > 0:
             self._bar_progress += max(0.002, gap*0.08)
