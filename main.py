@@ -3,18 +3,16 @@ PATSB Traffic Counter — Kivy landscape, square grid clusters with haptic feedb
 """
 import os
 import sys
-# FIX (desktop/.exe reliability): default to Kivy's bundled ANGLE backend
-# (translates to DirectX) on Windows, before any Kivy import happens —
-# GL backend selection is decided at Window-import time, so this has to
-# come first. This is what fixed the Windows .exe build hanging/crashing
-# in CI (GitHub's Windows runners have no real GPU, only software OpenGL
-# 1.1, which is below Kivy's OpenGL 2.0 minimum). ANGLE works even
-# without real GPU drivers, and is harmless on machines that do have a
-# real GPU — so this also protects the shipped .exe on whatever office
-# PC actually runs it, in case it has old/integrated graphics. Respects
-# an explicit override if one is already set.
-if sys.platform == 'win32':
-    os.environ.setdefault('KIVY_GL_BACKEND', 'angle_sdl2')
+# FIX: KIVY_GL_BACKEND=angle_sdl2 forcing REMOVED from here. It was
+# originally added to solve a build-time problem (GitHub's headless CI
+# Windows runner has no real GPU, only software OpenGL 1.1), but it was
+# wrongly left applying at RUNTIME too — meaning every actual end-user
+# machine, including ones with perfectly good real GPUs, was being forced
+# through the ANGLE→D3D12 translation layer instead of Kivy's normal
+# default backend. That forcing turned out to be the actual cause of a
+# silent crash a few hundred ms into startup on real hardware. The CI-only
+# fix now lives solely in build-windows.yml's PyInstaller build step,
+# where it can't affect the shipped exe's own runtime behavior at all.
 
 # FIX (crash diagnostics): the console window can close within a fraction
 # of a second of a crash — far too fast for anyone to read, let alone
