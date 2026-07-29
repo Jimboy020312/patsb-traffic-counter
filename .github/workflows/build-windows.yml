@@ -103,7 +103,13 @@ jobs:
       # whatever real OpenGL driver is on the machine it's run on.
       - name: Generate PyInstaller spec
         run: |
-          pyi-makespec --name PATSB_Traffic_Counter --onefile `
+          # FIX: --windowed restored — the crash that required a visible
+          # console for diagnosis is fixed (see the Mesa DLL exclusion
+          # step below and the ANGLE-forcing removal in main.py). A
+          # console window should never show for the shipped app now.
+          # If diagnostics are ever needed again, main.py already writes
+          # a persistent crash_log.txt regardless of console visibility.
+          pyi-makespec --name PATSB_Traffic_Counter --onefile --windowed `
             --add-data "assets;assets" `
             --icon "assets/icon.png" `
             main.py
@@ -123,10 +129,6 @@ jobs:
         env:
           KIVY_GL_BACKEND: angle_sdl2
         run: |
-          # FIX (diagnostic): --windowed removed for now — it hides all
-          # console output, including the traceback for whatever's
-          # crashing the exe on launch. Once that's fixed, --windowed can
-          # go back so the app doesn't show a console window normally.
           python -m PyInstaller PATSB_Traffic_Counter.spec 2>&1 | Tee-Object -FilePath pyinstaller_build.log
 
       - name: Upload PyInstaller log (always)
