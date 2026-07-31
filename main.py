@@ -1,5 +1,5 @@
 """
-PATSB Traffic Counter — Kivy landscape, square grid clusters with haptic feedback
+Traffic Counter — Kivy landscape, square grid clusters with haptic feedback
 """
 import os
 import sys
@@ -24,14 +24,14 @@ if getattr(sys, 'frozen', False) and sys.platform == 'win32':
     try:
         _appdata = os.environ.get('APPDATA')
         if _appdata:
-            _log_dir = os.path.join(_appdata, 'PATSB_Traffic_Counter')
+            _log_dir = os.path.join(_appdata, 'Traffic Counter')
             os.makedirs(_log_dir, exist_ok=True)
             _log_path = os.path.join(_log_dir, 'crash_log.txt')
             _log_f = open(_log_path, 'w', buffering=1,
                           encoding='utf-8', errors='replace')
             sys.stdout = _log_f
             sys.stderr = _log_f
-            print('=== PATSB Traffic Counter crash_log.txt ===')
+            print('=== Traffic Counter crash_log.txt ===')
 
             import traceback as _tb
 
@@ -131,7 +131,7 @@ def _config_dir():
     if os.name == 'nt':
         appdata = os.environ.get('APPDATA')
         if appdata:
-            d = os.path.join(appdata, 'PATSB_Traffic_Counter')
+            d = os.path.join(appdata, 'Traffic Counter')
             try:
                 os.makedirs(d, exist_ok=True)
                 return d
@@ -427,9 +427,9 @@ def _init_sounds():
         import os as _os
         td = tempfile.gettempdir()
         paths = {
-            'tap':   (_os.path.join(td, 'patsb_tap.wav'),   _make_beep()),
-            'click': (_os.path.join(td, 'patsb_click.wav'), _make_soft_click()),
-            'alarm': (_os.path.join(td, 'patsb_alarm.wav'), _make_alarm()),
+            'tap':   (_os.path.join(td, 'traffic_tap.wav'),   _make_beep()),
+            'click': (_os.path.join(td, 'traffic_click.wav'), _make_soft_click()),
+            'alarm': (_os.path.join(td, 'traffic_alarm.wav'), _make_alarm()),
         }
         for key, (path, data) in paths.items():
             with open(path, 'wb') as f:
@@ -1776,9 +1776,9 @@ class LoadingScreen(FloatLayout):
             self._bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._upd_bg, size=self._upd_bg)
 
-        # FIX: was two stacked lines — a big "PATSB" title with a smaller
-        # "Traffic Counter" line underneath. PATSB has been dropped
-        # entirely (the app is just "Traffic Counter" everywhere now —
+        # FIX: was two stacked lines — a big app-name title with a smaller
+        # "Traffic Counter" line underneath. The old branding has been
+        # dropped entirely (the app is just "Traffic Counter" everywhere now —
         # title bar, taskbar, Android app name). Replaced with a single
         # clean title plus a small tagline, and re-spaced the whole
         # column (title/tagline/status/progress-bar) a bit more evenly
