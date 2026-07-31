@@ -1,4 +1,4 @@
-name: Build PATSB Traffic Counter APK
+name: Build Traffic Counter APK
 on:
   push:
     branches:
@@ -133,9 +133,9 @@ jobs:
       # ── Write persistent release keystore, patch passwords ────────────────
       - name: Write release keystore
         run: |
-          echo "${{ secrets.PATSB_KEYSTORE_B64 }}" | base64 -d > patsb-release.keystore
-          sed -i "s/CI_KEYSTORE_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEYSTORE_PASSWORD }}/" buildozer.spec
-          sed -i "s/CI_KEY_PASSWORD_PLACEHOLDER/${{ secrets.PATSB_KEY_PASSWORD }}/" buildozer.spec
+          echo "${{ secrets.RELEASE_KEYSTORE_B64 }}" | base64 -d > release.keystore
+          sed -i "s/CI_KEYSTORE_PASSWORD_PLACEHOLDER/${{ secrets.RELEASE_KEYSTORE_PASSWORD }}/" buildozer.spec
+          sed -i "s/CI_KEY_PASSWORD_PLACEHOLDER/${{ secrets.RELEASE_KEY_PASSWORD }}/" buildozer.spec
 
       # FIX: confirms the sed patch actually replaced both placeholders,
       # without ever printing the real password. sed silently does nothing
@@ -145,7 +145,7 @@ jobs:
       - name: Verify keystore passwords were patched
         run: |
           if grep -q "CI_KEYSTORE_PASSWORD_PLACEHOLDER\|CI_KEY_PASSWORD_PLACEHOLDER" buildozer.spec; then
-            echo "::error::Keystore password placeholder was NOT replaced. Check that PATSB_KEYSTORE_PASSWORD and PATSB_KEY_PASSWORD secrets exist, and that the password doesn't contain / or & (which break this sed command)."
+            echo "::error::Keystore password placeholder was NOT replaced. Check that RELEASE_KEYSTORE_PASSWORD and RELEASE_KEY_PASSWORD secrets exist, and that the password doesn't contain / or & (which break this sed command)."
             exit 1
           else
             echo "Keystore password placeholders were replaced (values hidden)."
@@ -192,10 +192,16 @@ jobs:
       # directly ourselves so signing can't silently fail this way again.
       - name: Build APK
         env:
-          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/patsb-release.keystore
-          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.PATSB_KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEYSTORE: ${{ github.workspace }}/release.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          # FIX: NOT renamed to match a generic "release" naming pass —
+          # this value must exactly match the alias that was baked into
+          # the keystore file itself when it was originally generated via
+          # keytool. Changing this string alone (without also running
+          # `keytool -changealias` on the actual .keystore file) would
+          # break APK signing outright.
           P4A_RELEASE_KEYALIAS: patsb
-          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.PATSB_KEY_PASSWORD }}
+          P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           buildozer -v android release 2>&1 | tee build.log
           if [ ! -d bin ] || [ -z "$(find bin -name '*.apk' 2>/dev/null)" ]; then
@@ -318,7 +324,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: PATSB-Traffic-Counter
+          name: Traffic-Counter
           # FIX: removed .buildozer/**/*.apk — that glob could surface an
           # extra unsigned intermediate copy from deep inside the build
           # tree, leaving two similarly-named APKs in the artifact zip
@@ -329,4 +335,4 @@ jobs:
           if-no-files-found: warn
       - name: Clean up keystore
         if: always()
-        run: rm -f patsb-release.keystore
+        run: rm -f release.keystore
