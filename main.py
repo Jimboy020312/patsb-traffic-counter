@@ -1695,6 +1695,18 @@ class TimerWidget(BoxLayout):
         # (digits, backspace while typing, etc.) returns False and falls
         # through untouched to the focused TextInput's own normal typing,
         # so MM/SS editing keeps working exactly as before.
+        #
+        # FIX (Android): this whole Tab/Enter keyboard-highlight scheme
+        # is desktop-only in the first place (Android has no keyboard to
+        # drive it), but the opacity dimming it applies was still running
+        # once at popup-open time regardless of platform — dimming
+        # whichever button wasn't index 0 (i.e. the green "Set" button)
+        # down to 0.55 opacity, with nothing on Android ever able to
+        # trigger Tab to bring it back to full color. Guarding both the
+        # dimming and the Window.bind/unbind behind `platform != 'android'`
+        # means Set (green) and Cancel simply stay at their true, full
+        # color on Android — no dimmed/half-focused look with no keyboard
+        # around to fix it.
         tab_order = [inp_m, inp_s, cancel, confirm]
         focus_idx = {'i': 0}
 
@@ -1704,7 +1716,7 @@ class TimerWidget(BoxLayout):
                 is_sel = (i == focus_idx['i'])
                 if isinstance(w, TextInput):
                     w.focus = is_sel
-                else:
+                elif platform != 'android':
                     w.opacity = 1.0 if is_sel else 0.55
 
         def _popup_keydown(window, key, scancode, codepoint, modifiers):
@@ -1729,13 +1741,15 @@ class TimerWidget(BoxLayout):
                 return True
             return False
 
-        Window.bind(on_key_down=_popup_keydown)
+        if platform != 'android':
+            Window.bind(on_key_down=_popup_keydown)
         _set_focus(0)  # start on the MM field, ready to type immediately
 
         def _on_dismiss(*a):
             # FIX: clear the re-entrancy guard once the popup actually
             # closes, and unbind the popup-only keyboard handler.
-            Window.unbind(on_key_down=_popup_keydown)
+            if platform != 'android':
+                Window.unbind(on_key_down=_popup_keydown)
             self._set_popup_open = False
             self._active_cancel_fn = None
 
@@ -1762,26 +1776,32 @@ class LoadingScreen(FloatLayout):
             self._bg = Rectangle(pos=self.pos, size=self.size)
         self.bind(pos=self._upd_bg, size=self._upd_bg)
 
-        for text, hint, cy in [
-            ('PATSB',           72, 0.60),
-            ('Traffic Counter', 26, 0.46),
-        ]:
-            self.add_widget(Label(text=text, font_size=hint,
-                                  bold=(hint == 72),
-                                  color=(0.10, 0.45, 0.90, 1) if hint == 72 else (
-                                      0.65, 0.70, 0.78, 1),
-                                  halign='center', valign='middle',
-                                  pos_hint={'center_x': 0.5, 'center_y': cy},
-                                  size_hint=(1, None), height=hint+18))
+        # FIX: was two stacked lines — a big "PATSB" title with a smaller
+        # "Traffic Counter" line underneath. PATSB has been dropped
+        # entirely (the app is just "Traffic Counter" everywhere now —
+        # title bar, taskbar, Android app name). Replaced with a single
+        # clean title plus a small tagline, and re-spaced the whole
+        # column (title/tagline/status/progress-bar) a bit more evenly
+        # now that there's one fewer line competing for vertical room.
+        self.add_widget(Label(text='Traffic Counter', font_size=60,
+                              bold=True, color=(0.15, 0.55, 0.95, 1),
+                              halign='center', valign='middle',
+                              pos_hint={'center_x': 0.5, 'center_y': 0.60},
+                              size_hint=(1, None), height=78))
+        self.add_widget(Label(text='Vehicle Survey Counter', font_size=18,
+                              color=(0.55, 0.60, 0.68, 1),
+                              halign='center', valign='middle',
+                              pos_hint={'center_x': 0.5, 'center_y': 0.49},
+                              size_hint=(1, None), height=26))
 
         self._status = Label(text='Initialising...', font_size=18,
                              color=(0.40, 0.45, 0.52, 1), halign='center', valign='middle',
-                             pos_hint={'center_x': 0.5, 'center_y': 0.28},
+                             pos_hint={'center_x': 0.5, 'center_y': 0.30},
                              size_hint=(1, None), height=28)
         self.add_widget(self._status)
 
         self._bar_widget = FloatLayout(size_hint=(0.5, None), height=14,
-                                       pos_hint={'center_x': 0.5, 'center_y': 0.16})
+                                       pos_hint={'center_x': 0.5, 'center_y': 0.18})
         self.add_widget(self._bar_widget)
         self._bar_progress = 0.0
         self._target = 0.0
@@ -2223,24 +2243,37 @@ class RootLayout(FloatLayout):
             return
         self._keybind_popup_open = True
 
-        ACTIONS = [
+        # FIX: vehicle increment keys and the rest of the shortcuts are
+        # now two separate groups (with their own section headers below)
+        # instead of one flat list — much easier to scan when you're
+        # only trying to rebind one or the other.
+        #
+        # FIX: OTHER_ACTIONS is now ordered to match the always-visible
+        # translucent shortcuts bar, left to right: Help (F1), Reset All
+        # (Esc), Pause (Space), Timer (T), Lock, Pin. The four actions
+        # that AREN'T shown on that bar — Undo, Redo, Dock to Top, Dock
+        # to Bottom — follow afterward, in their existing order.
+        VEHICLE_ACTIONS = [
             ('j1_car', 'Left: Car'), ('j1_moto', 'Left: Motorcycle'),
             ('j1_lorry', 'Left: Lorry'), ('j1_bus', 'Left: Bus'),
             ('j1_llry', 'Left: Large Lorry'),
             ('j2_car', 'Right: Car'), ('j2_moto', 'Right: Motorcycle'),
             ('j2_lorry', 'Right: Lorry'), ('j2_bus', 'Right: Bus'),
             ('j2_llry', 'Right: Large Lorry'),
+        ]
+        OTHER_ACTIONS = [
+            ('help', 'Show Help'),
+            ('reset', 'Reset All'),
             ('timer_pause', 'Pause / Resume Timer'),
             ('timer_set', 'Open / Close Set Timer'),
             ('lock', 'Lock / Unlock'),
             ('pin', 'Pin Window on Top'),
             ('undo', 'Undo (used with Ctrl)'),
             ('redo', 'Redo (used with Ctrl)'),
-            ('reset', 'Reset All'),
-            ('help', 'Show Help'),
             ('dock_top', 'Dock to Top (used with Ctrl)'),
             ('dock_bottom', 'Dock to Bottom (used with Ctrl)'),
         ]
+        ACTIONS = VEHICLE_ACTIONS + OTHER_ACTIONS
 
         content = BoxLayout(orientation='vertical', spacing=10, padding=20)
         content.add_widget(Label(text="Customize Keyboard Shortcuts",
@@ -2319,7 +2352,14 @@ class RootLayout(FloatLayout):
             listening['handler'] = _capture
             Window.bind(on_key_down=_capture)
 
-        for name, label in ACTIONS:
+        def _section_header(text):
+            hdr = Label(text=text, font_size=13, bold=True,
+                        color=(0.55, 0.75, 0.95, 1), halign='left',
+                        valign='middle', size_hint=(1, None), height=26)
+            hdr.bind(size=lambda i, v: setattr(i, 'text_size', v))
+            return hdr
+
+        def _action_row(name, label):
             row = BoxLayout(orientation='horizontal', size_hint=(
                 1, None), height=36, spacing=10)
             lbl = Label(text=label, font_size=14, color=(0.88, 0.90, 0.92, 1),
@@ -2333,7 +2373,15 @@ class RootLayout(FloatLayout):
             btn.bind(on_release=lambda b, n=name: _start_listening(n))
             key_buttons[name] = btn
             row.add_widget(btn)
-            rows.add_widget(row)
+            return row
+
+        rows.add_widget(_section_header("Vehicle Increment Keys"))
+        for name, label in VEHICLE_ACTIONS:
+            rows.add_widget(_action_row(name, label))
+
+        rows.add_widget(_section_header("Other Shortcuts"))
+        for name, label in OTHER_ACTIONS:
+            rows.add_widget(_action_row(name, label))
 
         btn_row = BoxLayout(orientation='horizontal', spacing=10,
                             size_hint=(1, None), height=48)
@@ -2601,10 +2649,20 @@ class RootLayout(FloatLayout):
         # non-destructive default) so Enter alone never resets by
         # accident. Bound only for the popup's lifetime and unbound on
         # dismiss, so it can never interfere with anything else.
+        #
+        # FIX (Android): same issue as the Set Timer popup — this
+        # highlight scheme only means anything with a physical keyboard,
+        # but the initial _highlight() call ran unconditionally, dimming
+        # the red "Reset" button to 0.55 opacity with no Tab key on
+        # Android ever able to restore it. Guarding both the dimming and
+        # the Window.bind/unbind behind `platform != 'android'` keeps
+        # Reset at its true, full red on Android.
         choice_buttons = [cancel, confirm]
         selected = {'idx': 0}
 
         def _highlight():
+            if platform == 'android':
+                return
             for i, b in enumerate(choice_buttons):
                 b.opacity = 1.0 if i == selected['idx'] else 0.55
 
@@ -2621,13 +2679,15 @@ class RootLayout(FloatLayout):
                 return True
             return True  # swallow everything else while this popup is open
 
-        Window.bind(on_key_down=_popup_keydown)
+        if platform != 'android':
+            Window.bind(on_key_down=_popup_keydown)
         _highlight()
 
         def _on_dismiss(*a):
             # FIX: clear the re-entrancy guard once the popup actually
             # closes, and unbind the popup-only keyboard handler.
-            Window.unbind(on_key_down=_popup_keydown)
+            if platform != 'android':
+                Window.unbind(on_key_down=_popup_keydown)
             self._reset_popup_open = False
 
         popup.bind(on_dismiss=_on_dismiss)

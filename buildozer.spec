@@ -1,6 +1,6 @@
 [app]
 
-title = PATSB Traffic Counter
+title = Traffic Counter
 package.name = patsbtrafficcounter
 package.domain = com.patsb
 
