@@ -1,4 +1,4 @@
-name: Build PATSB Traffic Counter Windows EXE
+name: Build Traffic Counter Windows EXE
 on:
   push:
     branches:
@@ -117,7 +117,7 @@ jobs:
           # lets PyInstaller accept a plain PNG here and auto-convert it
           # to the .ico format a Windows exe's own baked-in icon actually
           # needs — no separate manual conversion step required.
-          pyi-makespec --name PATSB_Traffic_Counter --onefile --windowed `
+          pyi-makespec --name Traffic_Counter --onefile --windowed `
             --add-data "assets;assets" `
             --icon "assets/icon_windows.png" `
             main.py
@@ -125,7 +125,7 @@ jobs:
       - name: Strip build-only Mesa DLL from the spec
         shell: powershell
         run: |
-          $specPath = "PATSB_Traffic_Counter.spec"
+          $specPath = "Traffic_Counter.spec"
           $content = Get-Content $specPath -Raw
           $filterLine = "a.binaries = [x for x in a.binaries if 'opengl32.dll' not in x[0].lower()]`r`n"
           $content = $content -replace '(?m)^pyz = PYZ\(a\.pure\)', ($filterLine + 'pyz = PYZ(a.pure)')
@@ -137,7 +137,7 @@ jobs:
         env:
           KIVY_GL_BACKEND: angle_sdl2
         run: |
-          python -m PyInstaller PATSB_Traffic_Counter.spec 2>&1 | Tee-Object -FilePath pyinstaller_build.log
+          python -m PyInstaller Traffic_Counter.spec 2>&1 | Tee-Object -FilePath pyinstaller_build.log
 
       - name: Upload PyInstaller log (always)
         if: always()
@@ -163,7 +163,7 @@ jobs:
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: PATSB-Traffic-Counter-Windows
+          name: Traffic-Counter-Windows
           path: dist/*.exe
           retention-days: 30
           if-no-files-found: warn
