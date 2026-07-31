@@ -977,6 +977,21 @@ def _icon_path(key):
     return path if exists else None
 
 
+def _app_icon_path():
+    """Desktop (Windows/Linux/macOS) title-bar + taskbar icon. SDL2 uses
+    the SAME icon resource for both, so setting this one file covers
+    both automatically — no separate taskbar-icon step needed.
+
+    Android's app icon is a completely separate, build-time thing (baked
+    into the APK via buildozer.spec's icon.filename, not loaded here at
+    runtime), so this function is only ever consulted off-Android."""
+    path = os.path.join(_asset_dir(), 'icon_windows.png')
+    exists = os.path.exists(path)
+    print('ICON app icon_windows.png', path,
+          'OK' if exists else 'MISSING — place a square PNG there')
+    return path if exists else None
+
+
 # ── Square vehicle button ─────────────────────────────────────────────────────
 class SquareVehicleButton(Button):
     CORNER_RADIUS = 8
@@ -2031,7 +2046,7 @@ class RootLayout(FloatLayout):
         if platform == 'android':
             return
         Window.always_on_top = not Window.always_on_top
-        Window.set_title('PATSB Traffic Counter' +
+        Window.set_title('Traffic Counter' +
                          (' (Pinned)' if Window.always_on_top else ''))
 
     def _act_dock(self, edge):
@@ -2665,6 +2680,12 @@ class RootLayout(FloatLayout):
 
 
 class TrafficCounterApp(App):
+    # FIX: explicit title so the window title bar and OS taskbar entry
+    # both consistently read "Traffic Counter" — without this Kivy falls
+    # back to deriving a title from the class name, which is fragile and
+    # was previously overridden inconsistently (only when pinning).
+    title = "Traffic Counter"
+
     # FIX: Kivy's App class has its own built-in keybinding — completely
     # separate from our RootLayout._on_keyboard (which listens on
     # Window's newer on_key_down event) — that opens an internal Kivy
@@ -2675,6 +2696,23 @@ class TrafficCounterApp(App):
     use_kivy_settings = False
 
     def build(self):
+        # FIX: explicit desktop icon — Kivy would otherwise silently
+        # fall back to an implicit "icon.png next to main.py" lookup if
+        # one existed (or no icon at all if it didn't), which is exactly
+        # the ambiguity that caused the Windows icon and the Android
+        # build icon to end up entangled as the same file. Setting
+        # self.icon here to assets/icon_windows.png makes the desktop
+        # icon explicit and independent of whatever Android's build-time
+        # icon.png/icon_android.png happens to be. SDL2 uses this same
+        # single icon resource for BOTH the title bar and the taskbar
+        # entry, so they're guaranteed to match — no separate step for
+        # each is needed. Android's app icon is unrelated to this: it's
+        # baked into the APK at build time via buildozer.spec's
+        # icon.filename, not loaded at runtime here.
+        if platform != 'android':
+            icon_path = _app_icon_path()
+            if icon_path:
+                self.icon = icon_path
         # FIX: fullscreen and orientation-lock are mobile concepts —
         # forcing fullscreen on desktop would fight against being able to
         # resize/minimize the window (e.g. to sit alongside video
