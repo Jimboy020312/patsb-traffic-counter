@@ -1,8 +1,8 @@
 [app]
 
 title = Traffic Counter
-package.name = patsbtrafficcounter
-package.domain = com.patsb
+package.name = trafficcounter
+package.domain = com.trafficcounter
 
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,json
@@ -43,18 +43,23 @@ android.allow_backup = True
 # Sign with the same key every build so Android always accepts the update
 # in place, rather than refusing with "conflicts with an existing package".
 # The keystore file itself is written out by the CI workflow from a secret
-# (see build.yml) — it is never committed to the repo. The password
+# (see build-android.yml) — it is never committed to the repo. The password
 # placeholders below are patched in at build time via sed, the same way
 # android.numeric_version is patched using github.run_number.
-android.keystore = %(source.dir)s/patsb-release.keystore
+android.keystore = %(source.dir)s/release.keystore
 android.keystore_password = CI_KEYSTORE_PASSWORD_PLACEHOLDER
+# FIX: keyalias value intentionally NOT renamed away from 'patsb' — it
+# must exactly match the alias baked into the actual keystore file when
+# it was originally generated via keytool. Renaming this string alone
+# (without also running `keytool -changealias` on the real .keystore
+# file) would break APK signing outright.
 android.keyalias = patsb
 android.keyalias_password = CI_KEY_PASSWORD_PLACEHOLDER
 
 fullscreen = 1
 
-# FIX: icon.png moved into assets/ alongside the other bundled images —
-# move the actual file to assets/icon.png in your repo to match.
+# Android's launcher icon — lives in assets/ alongside the other bundled
+# images. Make sure assets/icon_android.png actually exists in your repo.
 icon.filename = %(source.dir)s/assets/icon_android.png
 
 # Include the assets folder so PNG icons are bundled in the APK
