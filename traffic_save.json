@@ -1,1 +1,4 @@
-{"j1": {"CAR": 15, "MOTO": 16, "LRY": 16, "LLRY": 12, "BUS": 27}, "j2": {"CAR": 16, "MOTO": 20, "LRY": 18, "LLRY": 30, "BUS": 5}}
+{
+  "j1": { "CAR": 0, "MOTO": 0, "LRY": 0, "LLRY": 0, "BUS": 0 },
+  "j2": { "CAR": 0, "MOTO": 0, "LRY": 0, "LLRY": 0, "BUS": 0 }
+}

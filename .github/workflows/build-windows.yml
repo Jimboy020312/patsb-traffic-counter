@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       # FIX: Windows Defender's real-time scanner is a well-known cause
       # of extremely slow (sometimes effectively hung) PyInstaller builds
@@ -109,9 +109,17 @@ jobs:
           # console window should never show for the shipped app now.
           # If diagnostics are ever needed again, main.py already writes
           # a persistent crash_log.txt regardless of console visibility.
+          #
+          # FIX: --icon was pointing at the old assets/icon.png — swapped
+          # to assets/icon_windows.png, the same artwork now used for the
+          # runtime title-bar/taskbar icon in main.py's
+          # TrafficCounterApp.build(). Pillow (already installed above)
+          # lets PyInstaller accept a plain PNG here and auto-convert it
+          # to the .ico format a Windows exe's own baked-in icon actually
+          # needs — no separate manual conversion step required.
           pyi-makespec --name PATSB_Traffic_Counter --onefile --windowed `
             --add-data "assets;assets" `
-            --icon "assets/icon.png" `
+            --icon "assets/icon_windows.png" `
             main.py
 
       - name: Strip build-only Mesa DLL from the spec
