@@ -62,6 +62,18 @@ fullscreen = 1
 # images. Make sure assets/icon_android.png actually exists in your repo.
 icon.filename = %(source.dir)s/assets/icon_android.png
 
+# FIX: without this, Android shows Kivy's own default splash logo while
+# the APK is bootstrapping (unpacking Python, initializing the runtime)
+# — BEFORE main.py's own custom LoadingScreen widget ever gets a chance
+# to run. presplash.filename replaces that with our own themed image
+# instead, and android.presplash_color fills any letterboxing behind it
+# with the exact same dark navy used everywhere else in the app
+# (Window.clearcolor / LoadingScreen's background), so the handoff from
+# native presplash to the real LoadingScreen is seamless rather than a
+# jarring flash between two different looks.
+presplash.filename = %(source.dir)s/assets/presplash.png
+android.presplash_color = #14171F
+
 # Include the assets folder so PNG icons are bundled in the APK
 source.include_patterns = assets/*.png,assets/*.jpg
 
