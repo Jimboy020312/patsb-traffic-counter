@@ -15,12 +15,12 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: "temurin"
-          java-version: "17"
+          distribution: 'temurin'
+          java-version: '17'
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: '3.10'
       - name: Install system dependencies
         run: |
           sudo apt-get update -y
@@ -122,6 +122,36 @@ jobs:
           ls ~/.buildozer/android/platform/android-sdk/tools/bin/
           echo "Cmdline tools:"
           ls ~/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/
+
+      # FIX: download.savannah.gnu.org (the freetype recipe's hardcoded
+      # source URL, baked into python-for-android itself) has intermittently
+      # 502'd across multiple builds in a row — this is a known, documented
+      # issue with Savannah's redirector, not anything in our config.
+      # Savannah's own site explicitly recommends download-mirror
+      # .savannah.gnu.org as the workaround for exactly this. Buildozer
+      # normally clones python-for-android itself fresh on every build (this
+      # checkout isn't cached — only the SDK/NDK under ~/.buildozer is), but
+      # if the directory already exists beforehand, buildozer detects that
+      # and just verifies the existing checkout instead of re-cloning. So we
+      # clone it ourselves here, first, and patch the freetype recipe's URL
+      # to the working mirror before buildozer ever gets to it.
+      - name: Pre-clone python-for-android and patch flaky freetype mirror
+        run: |
+          P4A_DIR=".buildozer/android/platform/python-for-android"
+          if [ ! -d "$P4A_DIR" ]; then
+            mkdir -p .buildozer/android/platform
+            git clone -b master --single-branch https://github.com/kivy/python-for-android.git "$P4A_DIR"
+          fi
+          RECIPE_FILE="$P4A_DIR/pythonforandroid/recipes/freetype/__init__.py"
+          if [ -f "$RECIPE_FILE" ]; then
+            echo "Before patch:"
+            grep -n "savannah" "$RECIPE_FILE" || true
+            sed -i 's/download\.savannah\.gnu\.org/download-mirror.savannah.gnu.org/' "$RECIPE_FILE"
+            echo "After patch:"
+            grep -n "savannah" "$RECIPE_FILE" || true
+          else
+            echo "::warning::freetype recipe file not found at $RECIPE_FILE — python-for-android's internal layout may have changed, so this mirror patch had no effect. The retry loop in the Build APK step is still in place as a fallback."
+          fi
 
       # ── Patch version code so Android recognises each build as newer ──────
       - name: Patch version code
@@ -241,9 +271,40 @@ jobs:
           P4A_RELEASE_KEYALIAS: patsb
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
-          buildozer -v android release 2>&1 | tee build.log
+          # FIX: fallback safety net beyond the freetype mirror patch above
+          # — retries the WHOLE build with longer backoff (30s/60s/120s)
+          # than p4a's own internal retries (1/2/4/8 SECONDS, too fast to
+          # ride out a real outage). Since python-for-android's own
+          # checkout and any already-downloaded recipe sources persist
+          # across these attempts (same job, nothing gets wiped between
+          # tries), a retry after a transient failure resumes quickly
+          # rather than starting over from scratch.
+          set +e
+          MAX_ATTEMPTS=3
+          SLEEP_SECS=30
+          ATTEMPT=1
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "=== Build attempt $ATTEMPT/$MAX_ATTEMPTS ==="
+            if [ $ATTEMPT -eq 1 ]; then
+              buildozer -v android release 2>&1 | tee build.log
+            else
+              buildozer -v android release 2>&1 | tee -a build.log
+            fi
+            STATUS=${PIPESTATUS[0]}
+            if [ $STATUS -eq 0 ] && [ -d bin ] && [ -n "$(find bin -name '*.apk' 2>/dev/null)" ]; then
+              echo "Build succeeded on attempt $ATTEMPT"
+              break
+            fi
+            echo "Build attempt $ATTEMPT failed (exit $STATUS)."
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Sleeping ${SLEEP_SECS}s before retrying..."
+              sleep $SLEEP_SECS
+              SLEEP_SECS=$((SLEEP_SECS * 2))
+            fi
+            ATTEMPT=$((ATTEMPT + 1))
+          done
           if [ ! -d bin ] || [ -z "$(find bin -name '*.apk' 2>/dev/null)" ]; then
-            echo "::error::buildozer did not produce an APK. Last 100 lines of the log:"
+            echo "::error::buildozer did not produce an APK after $MAX_ATTEMPTS attempts. Last 100 lines of the log:"
             tail -n 100 build.log
             exit 1
           fi
