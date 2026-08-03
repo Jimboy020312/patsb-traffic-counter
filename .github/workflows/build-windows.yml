@@ -117,9 +117,23 @@ jobs:
           # lets PyInstaller accept a plain PNG here and auto-convert it
           # to the .ico format a Windows exe's own baked-in icon actually
           # needs — no separate manual conversion step required.
+          # FIX (size): exclude stdlib modules PyInstaller's dependency
+          # scanner pulls in defensively but this app never actually uses
+          # (Kivy's clipboard provider chain tries importing tkinter as
+          # one of several fallbacks, but SDL2's clipboard provider —
+          # already bundled — always wins first in practice). Pure
+          # dead-weight removal, no behavior change.
           pyi-makespec --name Traffic_Counter --onefile --windowed `
             --add-data "assets;assets" `
             --icon "assets/icon_windows.png" `
+            --exclude-module tkinter `
+            --exclude-module unittest `
+            --exclude-module distutils `
+            --exclude-module lib2to3 `
+            --exclude-module pydoc `
+            --exclude-module doctest `
+            --exclude-module ensurepip `
+            --exclude-module test `
             main.py
 
       - name: Strip build-only Mesa DLL from the spec
