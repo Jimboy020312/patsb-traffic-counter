@@ -299,7 +299,7 @@ def _pc_haptic_flash():
 def _init_haptic():
     global _vibrator, _VibrationEffect
     try:
-        from jnius import autoclass
+        from jnius import autoclass  # type: ignore[reportMissingImports]
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
         Context = autoclass('android.content.Context')
         _vibrator = PythonActivity.mActivity.getSystemService(
